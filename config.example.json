@@ -1,0 +1,8 @@
+{
+  "bank": "spard",
+  "agreement": "Firmanavn ApS",
+  "period": "Seneste 12 måneder",
+  "formats": ["CSV"],
+  "persistProfile": "spard-firmanavn",
+  "ledger": "."
+}

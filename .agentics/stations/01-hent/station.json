@@ -1,0 +1,15 @@
+{
+  "id": "queued",
+  "name": "Hent posteringer",
+  "trigger": {
+    "type": "dispatch_worker",
+    "autoGit": true,
+    "idleTimeoutMinutes": 25,
+    "maxTimeoutMinutes": 90
+  },
+  "operatorConfig": {
+    "notify": {
+      "channels": ["push"]
+    }
+  }
+}

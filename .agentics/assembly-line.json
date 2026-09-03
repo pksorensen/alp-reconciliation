@@ -1,0 +1,5 @@
+{
+  "name": "Daglig afstemning",
+  "description": "Henter gårsdagens posteringer ud af netbanken med en deterministisk browseropskrift, godkendt af et menneske i MitID, og skriver dem som et versioneret posteringsregnskab i projektets eget repo.",
+  "version": "0.1.0"
+}

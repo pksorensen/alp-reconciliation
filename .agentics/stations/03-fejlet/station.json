@@ -1,0 +1,5 @@
+{
+  "id": "failed",
+  "name": "Fejlet",
+  "trigger": { "type": "none" }
+}

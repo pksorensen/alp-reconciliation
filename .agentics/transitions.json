@@ -1,0 +1,4 @@
+[
+  { "from": "queued", "to": "done", "condition": "success" },
+  { "from": "queued", "to": "failed", "condition": "failure" }
+]

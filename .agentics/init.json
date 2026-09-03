@@ -1,0 +1,19 @@
+{
+  "createTask": {
+    "title": "Afstemning {{date}}",
+    "description": "Hent posteringerne fra netbanken og skriv dem ind i posteringsregnskabet. Kørslen standser ved MitID og sender en notifikation — den venter på et menneske, ikke på en fejl."
+  },
+  "schedule": {
+    "name": "Daglig afstemning",
+    "cadence": {
+      "kind": "daily",
+      "hour": 8,
+      "minute": 0,
+      "timeZone": "Europe/Copenhagen"
+    },
+    "task": {
+      "title": "Afstemning {{date}}",
+      "description": "Hent posteringerne fra netbanken og skriv dem ind i posteringsregnskabet. Kørslen standser ved MitID og sender en notifikation — den venter på et menneske, ikke på en fejl."
+    }
+  }
+}
