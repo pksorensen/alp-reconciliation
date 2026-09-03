@@ -102,16 +102,41 @@ async function federatedToken() {
     return body.access_token || null;
 }
 
-const federated = await federatedToken();
-const TOKEN = federated || env('BROWSER_TOKEN') || env('BROWSER_API_TOKEN');
-if (!TOKEN) die('Ingen adgang til browser-servicen: hverken fødereret veksling eller BROWSER_TOKEN.');
+const staticToken = env('BROWSER_TOKEN') || env('BROWSER_API_TOKEN');
+let current = await federatedToken();
+const federated = Boolean(current);
+let mintedAt = Date.now();
+if (!current) current = staticToken;
+if (!current) die('Ingen adgang til browser-servicen: hverken fødereret veksling eller BROWSER_TOKEN.');
 
-const headers = { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` };
+/**
+ * Det fødererede token lever **fem minutter**. En kørsel gør ikke: et menneske skal
+ * finde sin telefon frem, og bankens eksport tager 26-68 sekunder pr. fil. Hentes
+ * tokenet én gang ved procesopstart, er det udløbet præcis dér hvor filerne skal
+ * hentes ned — og en 401 dér ligner en fejl i opskriften. Så veksl igen inden det
+ * bliver gammelt. Et statisk BROWSER_TOKEN udløber ikke og røres ikke.
+ */
+async function token() {
+    if (federated && Date.now() - mintedAt > 4 * 60_000) {
+        const fresh = await federatedToken();
+        if (fresh) {
+            current = fresh;
+            mintedAt = Date.now();
+            console.log(`… fornyede fødereret token ${new Date().toISOString().slice(11, 19)}`);
+        } else if (staticToken) {
+            console.log('… fødereret fornyelse mislykkedes — falder tilbage på BROWSER_TOKEN');
+            current = staticToken;
+            mintedAt = Date.now();
+        }
+    }
+
+    return current;
+}
 
 async function api(method, path, body) {
     const res = await fetch(`${BASE}${path}`, {
         method,
-        headers,
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${await token()}` },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     const text = await res.text();
@@ -235,7 +260,7 @@ async function saveArtifacts(run, kind = 'download') {
     for (const a of list) {
         const url = a.url?.startsWith('/') ? BASE + a.url : a.url;
         if (!url) continue;
-        const res = await fetch(url, { headers: { authorization: `Bearer ${TOKEN}` } });
+        const res = await fetch(url, { headers: { authorization: `Bearer ${await token()}` } });
         if (!res.ok) { console.log(`Kunne ikke hente ${a.id ?? url}: HTTP ${res.status}`); continue; }
         const filename = a.labels?.filename ?? `${kind}.bin`;
         const label = a.labels?.label;

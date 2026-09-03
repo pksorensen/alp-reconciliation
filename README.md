@@ -135,10 +135,16 @@ publishers. Der ligger ingen langlivet hemmelighed i containeren.
 Det kræver, at ejeren én gang har bundet linjen til de to scopes hos browser-servicen:
 
 ```
-PUT /v1/owners/<owner>/trust
-{ "bindings": [{ "assemblyLineIds": ["<linjens id>"],
+PUT /v1/owners/<owner>/trust        (med driftstokenet, ikke et fødereret)
+{ "bindings": [{ "projectOwner": "<owner>", "project": "<projekt>",
+                 "assemblyLineIds": ["<linjens id>"],
                  "scopes": ["browser:sessions", "browser:artifacts:read"] }] }
 ```
+
+`projectOwner` skal være den samme ejer som i stien — en ejer kan ikke skrive en
+binding, der giver en andens linje adgang. Udelades `stationIds`, gælder bindingen
+alle stationer på linjen. Ruten tager kun imod driftstokenet: kunne en linje skrive
+sin egen binding, var hele modellen pynt.
 
 Linjens id findes først efter importen. **Bemærk:** en ny import laver en *ny* linje med
 et nyt id — den opdaterer ikke den gamle. Bind derfor først, når linjen står som den skal,
