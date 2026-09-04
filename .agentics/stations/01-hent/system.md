@@ -8,19 +8,55 @@ Rapporteringen er på dansk.
 
 Der er to repoer i spil:
 
-- **Data** — det repo du står i. Det indeholder en regnskabsmappe med `config.json`
-  (som har feltet `bank`). Find den med
-  `find . -name config.json -not -path '*/node_modules/*'` og vælg den fil, der har
-  et `bank`-felt. Den mappe kaldes herunder `<ledger>`.
+- **Data** — det repo du står i. Regnskabet er kørslens *resultat*, ikke dens
+  forudsætning: `parse-exports.mjs` opretter `postings/`, `accounts.json`,
+  `counterparties.json`, `index.json` og `raw/` fra ingenting. Et tomt data-repo er
+  derfor en helt normal første dag og aldrig en grund til at lade være med at hente.
 - **Værktøj** — opskriften og de to scripts. De følger med denne linje og hentes med:
   `git clone --depth 1 https://github.com/pksorensen/alp-reconciliation /tmp/rec`
 
 Værktøjet er afhængighedsfrit og kræver kun Node 20+. Der skal ikke installeres noget.
 
-**Finder du ingen `config.json` med et `bank`-felt: stop og meld fejl.** Så er data-repoet
-ikke klonet, eller projektets `gitUrl` peger et forkert sted hen. En mislykket klon er
-ikke fatal for jobbet — du kan altså stå i en tom mappe uden at have fået en fejl at vide.
-Hent ingenting, opfind ingen konto, og skriv ikke i et regnskab du ikke fandt.
+### Er repoet overhovedet klonet?
+
+`git rev-parse --is-inside-work-tree` skal svare `true`. Gør den ikke det, er klonen
+knækket uden at jobbet fik det at vide, og alt hvad du skriver bagefter, er tabt. Stop
+dér. Et repo *uden commits* er derimod fint — det er et nyt projekt, ikke en fejl.
+
+### Find regnskabsmappen
+
+`find . -name config.json -not -path '*/node_modules/*'` og vælg den fil, der har et
+`bank`-felt. Dens mappe er herunder `<ledger>`. Findes ingen sådan fil, er `<ledger>`
+repoets rod, og du fortsætter — se næste afsnit.
+
+### Det ene du ikke må gætte
+
+`config.json` bærer **aftalenavnet**: den streng banken viser i topbaren, når man er
+logget ind. Opskriften asserter på den i trinnet `verify-agreement`, og det er den eneste
+spærring mod at hente en fremmed virksomheds posteringer. Derfor står den aldrig i denne
+opskrift — den ligger i et offentligt repo — og derfor må den aldrig gættes.
+
+Mangler `config.json`, så led efter aftalenavnet i opgavebeskrivelsen ovenfor: en linje
+der begynder med `Aftale:`. Står den der, så opret `<ledger>/config.json` og kør videre:
+
+```json
+{
+  "bank": "spard",
+  "agreement": "<navnet fra opgaven>",
+  "period": "Seneste 12 måneder",
+  "formats": ["CSV"],
+  "persistProfile": "spard-{{project.name}}",
+  "ledger": "."
+}
+```
+
+Filen bliver committet til sidst sammen med posteringerne, så det er en engangsting: fra
+i morgen findes den.
+
+Står aftalenavnet hverken i en `config.json` eller i opgaven: **stop og meld fejl** — og
+skriv præcis at det er `agreement` der mangler, og at det hører hjemme i `config.json` i
+projektets eget repo eller i opgavebeskrivelsen som `Aftale: <navn>`. Hent ingenting og
+opfind ingen aftale.
 
 ## Det ene sted et menneske skal ind
 
@@ -101,8 +137,8 @@ tallet står i filen.
 ## Til sidst
 
 Commit det hele: `postings/`, `accounts.json`, `counterparties.json`, `index.json` og
-`raw/`. Råfilerne skal med — de er det eneste, der kan afgøre, om en manglende postering
-skyldtes banken eller vores parser.
+`raw/` — og `config.json`, hvis det var dig der oprettede den. Råfilerne skal med: de er
+det eneste, der kan afgøre, om en manglende postering skyldtes banken eller vores parser.
 
 ## Afslut altid med en dom
 
@@ -113,9 +149,10 @@ posteringer der kom ind, hvilke konti de lå på, og saldoen pr. konto. Slut med
 `select:mcp__plugin_vibecast_vibecast__stop_broadcast` **inden** du starter kørslen, ikke
 bagefter.
 
-Gik det galt — ingen `config.json` med et `bank`-felt, login blev ikke godkendt, opskriften
-knækkede, ingen filer blev hentet, eller commit'et mislykkedes — så kald `stop_broadcast`
-med `conclusion: "failure"` og skriv hvorfor.
+Gik det galt — intet aftalenavn nogen steder, klonen knækket, login blev ikke godkendt,
+opskriften knækkede, ingen filer blev hentet, eller commit'et mislykkedes — så kald
+`stop_broadcast` med `conclusion: "failure"` og skriv hvorfor. Et **tomt regnskab** hører
+ikke til på den liste: det er en normal første kørsel.
 
 Lad aldrig sessionen slutte uden det kald. Uden en dom kan tavlen ikke se forskel på en
 afstemning der lykkedes og en der aldrig blev kørt, og opgaven bliver stående på den

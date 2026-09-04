@@ -38,6 +38,18 @@ skriver kontoudtog ind i det.
 
 ## Hvad projektet skal indeholde
 
+Et tomt repo er nok til at komme i gang. Regnskabet er kørslens *resultat* —
+`parse-exports.mjs` opretter `postings/`, `accounts.json`, `counterparties.json`,
+`index.json` og `raw/` fra ingenting — så den første afstemning i et nyt projekt skal
+ikke vente på, at nogen har lagt en mappestruktur.
+
+Én værdi kan kørslen ikke skaffe selv: **aftalenavnet**. Enten står det i en
+`config.json` i repoet fra start, eller også står det i opgavebeskrivelsen som en linje
+`Aftale: <navn>`, og så opretter stationen filen på første kørsel og committer den.
+Uden den ene streng stopper kørslen med at sige præcis det — den gætter aldrig, fordi
+`agreement` er assertionen der forhindrer, at en fremmed virksomheds posteringer
+havner i regnskabet.
+
 En regnskabsmappe — navnet er lige meget, stationen finder den — med en `config.json`:
 
 ```json

@@ -61,8 +61,15 @@ if (!BASE) die('BROWSER_URL er ikke sat, og --server blev ikke givet.');
 // Projektets egen `config.json` bærer alt det kundespecifikke — aftalenavn, periode,
 // formater. Det står dér og ikke i opskriften, fordi opskriften ligger i et offentligt
 // repo og aftalenavnet er kundens.
+// En `config.json` der ikke findes endnu er ikke en fejl: regnskabet er kørslens
+// resultat, så den allerførste kørsel i et nyt projekt har intet at læse. Værdierne
+// kan lige så godt komme fra `--param`. Kun en fil der *findes* og er ugyldig JSON
+// er fatal — dér er en tavs tom config det værste svar.
 const CONFIG = arg('config', '');
-const config = CONFIG ? JSON.parse(await readFile(resolve(CONFIG), 'utf8')) : {};
+const config = CONFIG && existsSync(resolve(CONFIG))
+    ? JSON.parse(await readFile(resolve(CONFIG), 'utf8'))
+    : {};
+if (CONFIG && !existsSync(resolve(CONFIG))) console.log(`ingen ${CONFIG} endnu — kører på --param alene.`);
 
 const RECIPE = resolve(arg('recipe', join(ROOT, 'recipes', `${config.bank ?? 'spard'}.json`)));
 const OUT = resolve(arg('out', 'downloads'));
@@ -307,6 +314,18 @@ async function phaseStart() {
     }
     if ('mitidUserId' in declared && !payload.params.mitidUserId) {
         die('Opskriften kræver et MitID-bruger-id, og hverken MITID_USER_ID eller --param mitidUserId=… gav et.');
+    }
+    // Manglende påkrævede parametre skal fejle her — før sessionen åbnes og før
+    // nogen som helst MitID-besked. `agreement` er den, der plejer at mangle, og den
+    // er ikke bureaukrati: trinnet `verify-agreement` asserter på den, og det er den
+    // eneste spærring mod at hente en fremmed virksomheds posteringer.
+    const missing = Object.entries(declared)
+        .filter(([k, spec]) => spec?.required && spec.default === undefined && !payload.params[k])
+        .map(([k]) => k)
+        .filter((k) => k !== 'mitidUserId');
+    if (missing.length) {
+        die(`Opskriften kræver ${missing.join(', ')}, og hverken config.json eller --param gav noget. `
+            + `Skriv aftalenavnet — den streng banken viser i topbaren — i config.json eller som --param agreement="…".`);
     }
 
     const session = await openSession();
