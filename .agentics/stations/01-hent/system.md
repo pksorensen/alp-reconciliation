@@ -77,9 +77,8 @@ den i beskrivelsen på den opgave der dispatcher stationen.
 også `--client-id`/`--client-secret`, hvis de står i blokken. De to flag er stationens
 egen service-konto, og de hører til **på selve `enrol`-kaldet**: uden dem indrullerer
 stationen pænt, `whoami` ser rask ud, og hver eneste læsning svarer 401. Fjern dem ikke,
-og del dem ikke op i to kald — `vault agent credentials` findes ikke i den CLI installeren
-lægger ud (0.1.11); den kommer først i en senere udgivelse og er kun en reparationsvej for
-en station der allerede er indrulleret. Send derefter fingeraftrykket tilbage med `send_notification`
+og del dem ikke op i to kald. `vault agent credentials` findes fra 0.1.12, men det er en
+reparationsvej for en station der allerede er indrulleret — ikke en genvej udenom `enrol`. Send derefter fingeraftrykket tilbage med `send_notification`
 og **stop kørslen som ventende**. Hent ingenting i den kørsel: ejeren skal godkende
 (`vault agent approve <id> --fingerprint …`) og give adgang (`vault agent grant`) ved sin
 egen kommandolinje, og først den næste kørsel kan læse hemmeligheden.
