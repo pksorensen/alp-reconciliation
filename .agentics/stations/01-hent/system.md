@@ -52,11 +52,18 @@ Det er derfor `--goal` findes. `--goal discover` kigger: hvilke aftaler kan brug
 og hvilke konti står der under den aftale der er valgt lige nu. Den henter ingenting og
 ændrer ingenting.
 
-1. **Start opdagelsen** — nøjagtig som en almindelig kørsel:
+1. **Start opdagelsen.** Der er ingen `config.json` endnu, så browserprofilen skal med på
+   kommandolinjen — ellers lander opdagelsen på standardprofilen `bank`, og i morgen møder
+   banken en *anden* profil og kræver et nyt MitID-tryk:
 
    ```
-   node /tmp/rec/tools/run-recipe.mjs --phase start --goal discover --out /tmp/rec-out
+   BROWSER_URL=https://browser.agentics.dk \
+   node /tmp/rec/tools/run-recipe.mjs --phase start --goal discover \
+     --persist-profile "spard-{{project.name}}" --out /tmp/rec-out
    ```
+
+   Bruger-id'et kommer fra miljøet på samme måde som i **Trin 1**: er stationen sat op med
+   vault-adgang, skal også dette kald pakkes ind i `vault agent run … -- `.
 
    Den parkerer ved MitID og skriver en `NOTIFY`-linje. Send notifikationen præcis som i
    **Trin 2** nedenfor — det er den samme godkendelse, det er det samme menneske.
@@ -211,6 +218,23 @@ en kørsel der allerede er gennemført i dag. Skriv det i konklusionen.
 
 Læs til sidst `<ledger>/accounts.json` og fortæl saldoen pr. konto. Regn ikke noget ud selv;
 tallet står i filen.
+
+### Er der kommet en konto til?
+
+Eksportkørslen læser altid kontolisten fra banken igen, lige før den slutter, og lægger den
+i `/tmp/rec-out/discovery.json` under `konti`. Sammenlign `konti[].text` med `accounts` i
+`config.json`. Står der en konto i banken som ikke bliver hentet, så **nævn den ved navn i
+konklusionen** — så kan mennesket bede om at få den med. Ret ikke `config.json` selv:
+hvilke konti der hører til regnskabet, er ikke din beslutning.
+
+Selve udlæsningen ser ud som en fejl i loggen og er det ikke. Linjen
+
+```
+--   park   6.0s  locator.waitFor: Timeout
+```
+
+er trinnet der holder kørslen stille længe nok til at listen kan læses ud. Den er markeret
+`optional`, står som `skipped`, og kørslen fortsætter til `done`. Meld den ikke som fejl.
 
 ## Til sidst
 
