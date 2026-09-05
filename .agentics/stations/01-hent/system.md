@@ -57,7 +57,10 @@ gælder vault-vejen, og så er der tre ting der skal være på plads. Tjek dem i
    videre. Svarer den at der ingen identitet er, så se **Første indrullering** herunder.
 3. **Har den lov?** `vault agent grants`. Står der ingen politik for `$VAULT_ITEM_ID`, så
    findes identiteten men ejeren har ikke givet den adgang endnu — det er også
-   **Første indrullering**.
+   **Første indrullering**. Svarer kaldet derimod **401**, er det ikke politikken der
+   mangler, men service-kontoen: identiteten er indrulleret, men stationen har intet
+   gyldigt token at vise. Meld det som **service-konto mangler**, ikke som manglende
+   adgang — det er to forskellige ting for ejeren at ordne.
 
 ### Første indrullering — én gang, og kun med et menneske til stede
 
