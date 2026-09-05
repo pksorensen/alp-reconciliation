@@ -29,62 +29,112 @@ dér. Et repo *uden commits* er derimod fint — det er et nyt projekt, ikke en 
 `bank`-felt. Dens mappe er herunder `<ledger>`. Findes ingen sådan fil, er `<ledger>`
 repoets rod, og du fortsætter — se næste afsnit.
 
-### Det ene du ikke må gætte
+### Har du det, der skal til?
 
-`config.json` bærer **aftalenavnet**: den streng banken viser i topbaren, når man er
-logget ind. Opskriften asserter på den i trinnet `verify-agreement`, og det er den eneste
-spærring mod at hente en fremmed virksomheds posteringer. Derfor står den aldrig i denne
-opskrift — den ligger i et offentligt repo — og derfor må den aldrig gættes.
+`config.json` bærer to ting kørslen ikke kan skaffe ved at gætte:
 
-Mangler `config.json`, så led efter aftalenavnet i opgavebeskrivelsen ovenfor: en linje
-der begynder med `Aftale:`. Står den der, så opret `<ledger>/config.json` og kør videre:
+- **`agreement`** — strengen banken viser i topbaren. Opskriften asserter på den, og det
+  er den eneste spærring mod at hente en fremmed virksomheds posteringer.
+- **`accounts`** — kontonavnene, præcis som de står på oversigten. Uden dem ved kørslen
+  ikke hvad den skal åbne.
 
-```json
-{
-  "bank": "spard",
-  "agreement": "<navnet fra opgaven>",
-  "period": "Seneste 12 måneder",
-  "formats": ["CSV"],
-  "persistProfile": "spard-{{project.name}}",
-  "ledger": "."
-}
-```
+Står de begge i filen, så spring til **Det ene sted et menneske skal ind** og kør dagens
+eksport. Mangler en af dem, er det ikke en fejl — det er en **første kørsel**, og den har
+sin egen form.
 
-Filen bliver committet til sidst sammen med posteringerne, så det er en engangsting: fra
-i morgen findes den.
+### Første kørsel: spørg banken, ikke dig selv
 
-Står aftalenavnet hverken i en `config.json` eller i opgaven, så **spørg** — men spørg
-rigtigt, for de to kanaler til et menneske kan ikke det samme.
+Værdierne skal ikke gættes, og de skal heller ikke tastes af et menneske der husker
+forkert. De står i banken. Så log på **én gang**, lad kørslen læse listerne ud, og lad
+mennesket vælge blandt dem.
 
-`AskUserQuestion` er et **valg**, ikke et tekstfelt. Svaret bliver ført ind i ruden ved at
-navigere i en radioliste, så tekst der ikke matcher en af mulighederne, vælger tavst den
-første. Og ser ingen med på sessionen, afgøres spørgsmålet af sig selv i løbet af få
-sekunder — også dér på den første mulighed. **Den første mulighed skal derfor være den
-sikre.** Aftalenavnet kan aldrig komme ind ad den vej.
+Det er derfor `--goal` findes. `--goal discover` kigger: hvilke aftaler kan brugeren se,
+og hvilke konti står der under den aftale der er valgt lige nu. Den henter ingenting og
+ændrer ingenting.
 
-Terminalen er derimod fri tekst: et menneske der ser med, skriver direkte i ruden. Det er
-dér navnet kan komme fra.
+1. **Start opdagelsen** — nøjagtig som en almindelig kørsel:
 
-Gør sådan:
+   ```
+   node /tmp/rec/tools/run-recipe.mjs --phase start --goal discover --out /tmp/rec-out
+   ```
 
-1. Kald `send_notification` **først**. `AskUserQuestion` blokerer, så en besked sendt
-   bagefter bliver aldrig sendt. Er der ingen kanal sat op på stationen, fejler kaldet —
-   fortsæt alligevel.
-2. Kald `AskUserQuestion` med præcis disse to muligheder, i denne rækkefølge:
-   - `Stop — jeg lægger aftalenavnet i repoet selv`
-   - `Jeg skriver aftalenavnet i terminalen nu`
-3. Kommer svaret `Stop` — eller kommer det af sig selv, fordi ingen så med — så meld fejl
-   som beskrevet nedenfor. Det er det rigtige udfald for en uovervåget kørsel kl. 08:00.
-4. Kommer det andet svar, så skriv én linje i ruden — `Skriv aftalenavnet præcis som banken
-   viser det i topbaren:` — og **afslut din tur uden at kalde `stop_broadcast`**. Sessionen
-   bliver stående, og den næste besked du får, er navnet. Opret `config.json` med det og
-   kør videre.
+   Den parkerer ved MitID og skriver en `NOTIFY`-linje. Send notifikationen præcis som i
+   **Trin 2** nedenfor — det er den samme godkendelse, det er det samme menneske.
 
-Kan du slet ikke kalde `AskUserQuestion`, så spring spørgsmålet over og meld fejl.
+2. **Saml opdagelsen op, men lad sessionen stå åben:**
 
-Når du melder fejl, så skriv præcis at det er `agreement` der mangler, og at det hører
-hjemme i `config.json` i projektets eget repo eller i opgavebeskrivelsen som
-`Aftale: <navn>`. Hent ingenting og opfind ingen aftale.
+   ```
+   node /tmp/rec/tools/run-recipe.mjs --phase resume --keep --out /tmp/rec-out
+   ```
+
+   `--keep` er hele pointen: pålogningen hører til sessionen, og eksporten bagefter kan
+   køre på den samme. Uden den ville en førstegangsopsætning koste to MitID-tryk.
+
+   Sidste linje er `DISCOVERED ` efterfulgt af JSON — den samme står i
+   `/tmp/rec-out/discovery.json`. Den indeholder `aktuelAftale`, `aftaletyper`, `aftaler`
+   og `konti`, hver som en liste af `{text, href}`.
+
+3. **Spørg mennesket — og spørg i den form kanalen kan bære.**
+
+   `AskUserQuestion` er et **valg**, ikke et tekstfelt. Svaret føres ind ved at navigere i
+   en radioliste, så tekst der ikke matcher en mulighed, vælger tavst den første. Og ser
+   ingen med, afgøres spørgsmålet af sig selv i løbet af få sekunder — også dér på den
+   første mulighed. **Den første mulighed skal derfor være den sikre.**
+
+   Det er præcis derfor opdagelsen kommer først: en liste hentet ud af banken er et valg,
+   og et valg er det eneste kanalen kan bære.
+
+   Kald `send_notification` **først** — `AskUserQuestion` blokerer, så en besked sendt
+   bagefter bliver aldrig sendt. Stil så to spørgsmål:
+
+   - **Aftalen.** Skriv `aktuelAftale` i spørgsmålet, for det er den eneste aftale
+     eksporten kan bruge: opskriften skifter aldrig aftale i netbanken. Muligheder, i
+     denne rækkefølge:
+     1. `Stop — det er den forkerte aftale`
+     2. `Ja, hent posteringer for «<aktuelAftale>»`
+
+     Vælges den første — eller afgøres den af sig selv — så meld fejl som beskrevet
+     nedenfor og skriv hvilke aftaler brugeren kunne vælge imellem (`aftaler` og
+     `aftaletyper`). Aftalen skiftes i netbanken af brugeren selv, ikke af linjen.
+
+   - **Kontiene.** Muligheder, i denne rækkefølge:
+     1. `Alle konti` — den sikre, fordi den henter alt under en aftale der lige er bekræftet
+     2. …ét punkt pr. konto i `konti`, med `multiSelect`
+
+4. **Skriv `<ledger>/config.json`** med svarene og bankens egne strenge — kopiér dem fra
+   `discovery.json`, skriv dem ikke af:
+
+   ```json
+   {
+     "bank": "spard",
+     "agreement": "<aktuelAftale>",
+     "accounts": ["<kontonavn>", "<kontonavn>"],
+     "period": "Seneste 12 måneder",
+     "formats": ["CSV"],
+     "persistProfile": "spard-{{project.name}}",
+     "ledger": "."
+   }
+   ```
+
+   `persistProfile` er projektets eget: to projekter må ikke dele browserprofil, for de er
+   to forskellige MitID-brugere hos den samme bank.
+
+   Filen bliver committet til sidst sammen med posteringerne. Det er en engangsting: fra i
+   morgen findes den, og så kører linjen den korte vej.
+
+5. **Hent posteringerne på den session der allerede er logget ind:**
+
+   ```
+   node /tmp/rec/tools/run-recipe.mjs --phase again --goal export \
+     --config <ledger>/config.json --out /tmp/rec-out
+   ```
+
+   Den lukker sessionen når den er færdig. Fortsæt derefter ved **Trin 4**.
+
+Kan du slet ikke kalde `AskUserQuestion`, så spring spørgsmålet over og meld fejl — men
+**skriv listerne fra `discovery.json` i din konklusion**. Så har mennesket alt hvad der
+skal til for at lægge `config.json` i repoet selv, og næste kørsel klarer sig uden at
+spørge.
 
 ## Det ene sted et menneske skal ind
 
@@ -98,7 +148,7 @@ Derfor er kørslen delt i to kald med en besked imellem.
 
 ```
 BROWSER_URL=https://browser.agentics.dk \
-node /tmp/rec/tools/run-recipe.mjs --phase start \
+node /tmp/rec/tools/run-recipe.mjs --phase start --goal export \
   --config <ledger>/config.json --out /tmp/rec-out
 ```
 
@@ -107,7 +157,7 @@ Er stationen sat op med vault-adgang, skal kaldet pakkes ind:
 
 ```
 vault agent run --vault "$VAULT_ID" --item "$VAULT_ITEM_ID" --env MITID_USER_ID=userId -- \
-  node /tmp/rec/tools/run-recipe.mjs --phase start --config <ledger>/config.json --out /tmp/rec-out
+  node /tmp/rec/tools/run-recipe.mjs --phase start --goal export --config <ledger>/config.json --out /tmp/rec-out
 ```
 
 Kommandoen kører til opskriften parkerer ved MitID og skriver så en sidste linje der

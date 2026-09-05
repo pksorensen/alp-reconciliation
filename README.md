@@ -43,21 +43,42 @@ Et tomt repo er nok til at komme i gang. Regnskabet er kørslens *resultat* —
 `index.json` og `raw/` fra ingenting — så den første afstemning i et nyt projekt skal
 ikke vente på, at nogen har lagt en mappestruktur.
 
-Én værdi kan kørslen ikke skaffe selv: **aftalenavnet**. Enten står det i en
-`config.json` i repoet fra start, eller også står det i opgavebeskrivelsen som en linje
-`Aftale: <navn>`, og så opretter stationen filen på første kørsel og committer den.
-Mangler den begge steder, **spørger** stationen: den sender en notifikation og stiller et
-valg på opgavekortet — stop, eller "jeg skriver navnet i terminalen nu". Ser nogen med,
-kan navnet skrives direkte i ruden, og kørslen fortsætter. Ser ingen med, afgøres valget
-af sig selv på den sikre mulighed, og kørslen stopper med at sige præcis hvad der manglede.
+To værdier kan kørslen ikke skaffe ved at gætte: **aftalenavnet** og **kontonavnene**.
+Aftalenavnet er assertionen, der forhindrer, at en fremmed virksomheds posteringer havner
+i regnskabet, og kontonavnene er det, kørslen åbner. De står ikke i denne opskrift, for
+den ligger i et offentligt repo, og de er kundens.
 
-Bemærk formen: spørgsmålet er et **valg**, ikke et tekstfelt. Svaret på et
-`AskUserQuestion` føres ind ved at navigere i en radioliste, så fri tekst der ikke matcher
-en mulighed, vælger tavst den første — derfor kan aftalenavnet kun komme ind gennem
-terminalen eller en fil, aldrig gennem selve spørgsmålet.
+De skal heller ikke tastes af et menneske, der husker forkert. **De står i banken.** Så
+den allerførste kørsel i et nyt projekt logger på én gang og *spørger banken*:
 
-Den gætter aldrig, fordi `agreement` er assertionen der forhindrer, at en fremmed
-virksomheds posteringer havner i regnskabet.
+```
+node tools/run-recipe.mjs --phase start  --goal discover --out ./ud   # parkerer ved MitID
+node tools/run-recipe.mjs --phase resume --keep           --out ./ud   # skriver ud/discovery.json
+```
+
+`--goal discover` henter ingenting og ændrer ingenting. Den åbner bankens aftalevælger,
+læser hvilke aftaler brugeren kan se og hvilke konti der ligger under den, der er valgt
+nu, og lukker den igen. Resultatet er fire lister: `aktuelAftale`, `aftaletyper`,
+`aftaler` og `konti`.
+
+Først *derefter* spørger stationen mennesket — og nu er spørgsmålet et **valg** mellem
+strenge, banken selv har skrevet. Det er ikke en detalje: svaret på et `AskUserQuestion`
+føres ind ved at navigere i en radioliste, så fri tekst, der ikke matcher en mulighed,
+vælger tavst den første. Et aftalenavn kan aldrig komme ind ad den vej. En liste kan.
+
+`--keep` lader sessionen stå åben, så eksporten kan køre på den samme pålogning:
+
+```
+node tools/run-recipe.mjs --phase again --goal export --config <ledger>/config.json --out ./ud
+```
+
+Uden den ville en førstegangsopsætning koste to MitID-tryk — ét til at finde ud af, hvad
+der skal hentes, og ét til at hente det. En kørsel *er* et verbum på sessionen hos
+browser-servicen, og pålogningen hører til sessionen; det er hele mekanikken.
+
+Svarer ingen — fordi klokken er 08:00, og ingen ser med — stopper første kørsel med at
+skrive listerne i sin konklusion. Så kan `config.json` lægges i repoet i hånden, og i
+morgen kører linjen den korte vej.
 
 En regnskabsmappe — navnet er lige meget, stationen finder den — med en `config.json`:
 
@@ -65,6 +86,7 @@ En regnskabsmappe — navnet er lige meget, stationen finder den — med en `con
 {
   "bank": "spard",
   "agreement": "Firmanavn ApS",
+  "accounts": ["Erhvervskonto", "MasterCard Business"],
   "period": "Seneste 12 måneder",
   "formats": ["CSV"],
   "persistProfile": "spard-firmanavn",
@@ -76,6 +98,7 @@ En regnskabsmappe — navnet er lige meget, stationen finder den — med en `con
 | --- | --- |
 | `bank` | Hvilken opskrift der køres (`recipes/<bank>.json`). Feltet stationen genkender mappen på. |
 | `agreement` | Aftalen i netbanken. Kørslen **stopper**, hvis den er logget ind på en anden — et kontoudtog fra det forkerte selskab er værre end intet kontoudtog. |
+| `accounts` | Kontonavnene som banken skriver dem på oversigten. Navne, ikke `accountId` — et id, der skifter, ville knække linjen tavst, og navnet er alligevel det, mennesket kan genkende. |
 | `period` | Bankens egen forudindstilling. Standarden i netbanken er "I dag", og uden det her eksporterer man én dag og tror det gik godt. |
 | `formats` | `["CSV"]` er nok til posteringerne. `"PDF"` koster 25-46 sekunder pr. konto og er kun et bilag. |
 | `persistProfile` | Navnet på den huskede browserprofil. Uden den møder banken en ny enhed hver morgen — og en ny enhed betyder ekstra verifikation, hver morgen. |
@@ -140,7 +163,7 @@ BROWSER_URL=https://browser.agentics.dk BROWSER_TOKEN=… MITID_USER_ID=… \
 node tools/parse-exports.mjs --in ./ud --ledger ~/regnskab
 ```
 
-`--phase run` er standard og gør begge faser i én proces. Som job køres de hver for sig,
+`--goal export` er standard, og `--phase run` gør begge faser i én proces. Som job køres de hver for sig,
 med notifikationen imellem — det er hele grunden til opdelingen: en agent, der sad og
 pollede, kunne ikke sende noget imens, og en notifikation efter godkendelsen ville være
 ubrugelig.
@@ -181,15 +204,26 @@ hånd-kørsler, ikke til stationen.
 - **Den godkender ikke MitID.** Ikke fordi det er svært, men fordi det ikke *må*: en
   opskrift, der trykkede godkend selv, ville være en opskrift på at give en tjeneste
   kundens identitet.
-- **Den kan kun én bank.** `recipes/spard.json` er Sparekassen Danmark. En anden bank er
+- **Den kan kun én bank.** `recipes/spard-*.json` er Sparekassen Danmark. En anden bank er
   en ny opskrift ved siden af og et `bank`-felt, der peger på den.
 
-## Opskriften
+## Opskrifterne
 
-`recipes/spard.json`. Den er en liste af trin, ikke et program: ingen udtryk, ingen
-betingelser, ingen model i afspilningen. Otte ting i den ser ud som pynt og er det ikke —
-de står som `comment` i filen selv, hver især fundet ved at flytte en optagelse fra en
-rigtig Chrome over i tjenestens Playwright. De vigtigste:
+Tre filer, ikke én. Login er sin egen, fordi det er den halvdel, begge mål deler — og
+fordi motoren ingen betingelser har: der findes ikke én opskrift, der både kan logge på
+og lade være. Værktøjet lægger dem i forlængelse af hinanden.
+
+| Fil | Hvad den gør |
+| --- | --- |
+| `recipes/spard-login.json` | MitID-pålogningen. Slutter, når netbanken står åben. |
+| `recipes/spard-discover.json` | Kigger: aftaler og konti. Henter og ændrer intet. |
+| `recipes/spard-export.json` | Den daglige eksport for kontiene i `config.json`. |
+
+De er lister af trin, ikke programmer: ingen udtryk, ingen betingelser, ingen model i
+afspilningen. En håndfuld ting i dem ser ud som pynt og er det ikke — de står som
+`comment` i filerne selv, hver især fundet ved at flytte en optagelse fra en rigtig
+Chrome over i tjenestens Playwright, eller ved at måle på den åbne session bagefter. De
+vigtigste:
 
 - **Cookie-muren** sætter `role="alert"` på knappen, så `getByRole('button')` finder
   intet. `#declineButton` virker. Trinnet er `optional`, fordi anden kørsel på en husket
@@ -201,7 +235,33 @@ rigtig Chrome over i tjenestens Playwright. De vigtigste:
 - **Engangskoden kommer først, når appen har åbnet forespørgslen** — derfor `watch` på
   selve ventetrinnet i stedet for et opslag før.
 - **Periodevælgeren skal åbnes først.** `role=menuitemcheckbox` matcher intet, før
-  trækkeren er klikket.
+  trækkeren er klikket. Og standarden er "I dag": uden de to trin eksporterer man én dag
+  og tror, det gik godt.
+- **Aftalevælgerens modal har ingen lukkeknap, og `Escape` er en fælde.** Escape lukker
+  indholdet, men `ReactModal__Overlay` bliver stående og opsnapper hvert eneste klik
+  derefter — netbanken er reelt frosset for automatik, og fejlen kommer først flere trin
+  senere som en timeout på en knap, der tydeligvis er der. En navigation river React-træet
+  ned og er den eneste rene vej ud. Derfor `goto` og ikke `press`.
+- **De to aftaletyper er ikke faneblade.** Et klik på "Erhverv" eller "Privat" skifter
+  aftale med det samme, lukker modalen og ændrer brugerens egen netbank. Opdagelsen
+  klikker dem derfor aldrig — den læser dem.
+- **Konti åbnes på navn, ikke på `accountId`.** `role=link` + `exact` rammer den rigtige
+  konto fra oversigten, og så er der ingen id'er at holde ved lige.
+
+### Hvordan en liste slipper ud af en kørsel
+
+`waiting.data` på et `human`-trin er den eneste kanal, og motoren sletter feltet igen i
+sit `finally`. Listerne kan altså kun læses, *mens* trinnet står parkeret. Derfor slutter
+opdagelsen med et `human`-trin, hvis `until` aldrig matcher, med et kort timeout og
+`optional: true`: klienten poller kørslen, fanger listerne i vinduet, og trinnet bliver
+sprunget over, så kørslen ender `done` og ikke `failed`.
+
+Skelnen mellem hvad der gemmes, er formen: `collect` giver lister, `watch` giver strenge.
+Derfor havner MitID-engangskoden aldrig i `discovery.json`, mens aftale- og kontolisterne
+gør.
+
+Det koster også seks sekunder om dagen i eksporten, som gør det samme med kontolisten. Det
+er prisen for at kunne opdage, at banken har fået en konto mere, som linjen ikke henter.
 
 Motoren er dør B i `pks-agent-browser`. Dens egne noter står i
 `projects/pks-agent-browser/docs/recipes.md`.

@@ -1,0 +1,39 @@
+{
+  "name": "spard-discover",
+  "comment": "Førstegangs-opdagelse: hvilke aftaler kan denne MitID-bruger se, og hvilke konti ligger under den aftale der er valgt nu. Henter INTET og ændrer INTET — den kigger. Køres efter spard-login.",
+  "params": {},
+  "steps": [
+    {
+      "id": "reset", "do": "goto", "url": "https://www.spard.dk/netbank", "timeoutMs": 30000,
+      "comment": "Altid fra et kendt sted. Vigtigere end det ser ud: se noten på trinnet luk."
+    },
+    {
+      "id": "aktuel", "do": "collect", "selector": ".ebank-nav-company-selector__button", "attr": "aria-label", "as": "aktuelAftale", "timeoutMs": 20000,
+      "comment": "Topbarens knap ER aftalenavnet. aria-label er \"<navn>, undefined\" — bankens egen fejl, ikke vores; text er den rene streng."
+    },
+    { "id": "open-picker", "do": "click", "selector": ".ebank-nav-company-selector__button", "timeoutMs": 20000 },
+    { "id": "wait-modal", "do": "waitForText", "text": "Vælg aftaler", "timeoutMs": 10000 },
+    {
+      "id": "typer", "do": "collect", "selector": ".company-private-toggle__agreement-btn", "as": "aftaletyper", "timeoutMs": 10000,
+      "comment": "Præcis to: Erhverv og Privat. De er IKKE faneblade — et klik skifter aftale med det samme og lukker modalen. Derfor klikker denne opskrift dem aldrig."
+    },
+    {
+      "id": "firmaer", "do": "collect", "selector": ".company-selector-row__company .highlight-in-string", "as": "aftaler", "timeoutMs": 10000,
+      "comment": "Ikke selve knappen: dens innerText har et sr-only \"Aktiveret\" hængende bagpå. .highlight-in-string er det rene navn."
+    },
+    {
+      "id": "luk", "do": "goto", "url": "https://www.spard.dk/netbank", "timeoutMs": 30000,
+      "comment": "Modalen har ingen lukkeknap, og Escape lukker kun indholdet: ReactModal__Overlay bliver stående og opsnapper hvert eneste klik derefter. Målt. En navigation river React-træet ned og er den eneste rene vej ud."
+    },
+    { "id": "konti", "do": "collect", "selector": "a[href*='/netbank/accounts/account?accountId=']", "as": "konti", "timeoutMs": 20000 },
+    {
+      "id": "park", "do": "human", "optional": true,
+      "prompt": "Vælg aftale og konti",
+      "data": ["aktuelAftale", "aftaletyper", "aftaler", "konti"],
+      "until": { "text": "__parkér-og-fortsæt__" },
+      "timeoutMs": 10000,
+      "comment": "Den eneste kanal ud af en kørsel: waiting.data. Motoren sletter waiting igen i sit finally, så listerne kan KUN læses mens trinnet står parkeret — derfor et bevidst timeout på et until der aldrig matcher. optional gør at kørslen slutter done og ikke failed."
+    },
+    { "id": "slut", "do": "screenshot", "label": "aftaler og konti" }
+  ]
+}

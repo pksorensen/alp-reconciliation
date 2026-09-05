@@ -1,0 +1,37 @@
+{
+  "name": "spard-login",
+  "comment": "Login til Sparekassen Danmarks netbank med MitID. Halvdelen der ALTID køres først — både før en eksport og før en opdagelse. Den slutter når netbanken står åben på /netbank.",
+  "params": {
+    "mitidUserId": {
+      "required": true,
+      "secret": true,
+      "comment": "Personhenførbart. Kommer fra MITID_USER_ID i miljøet, aldrig fra en fil i dette repo."
+    }
+  },
+  "steps": [
+    { "id": "open-login", "do": "goto", "url": "https://www.spard.dk/login/?returnUri=%2fnetbank", "timeoutMs": 45000 },
+    {
+      "id": "cookies", "do": "click", "optional": true, "timeoutMs": 2500, "selector": "#declineButton",
+      "comment": "Cookie-muren sætter role=alert på knappen, så getByRole('button') finder intet. Optional: anden kørsel på en husket profil møder ikke muren."
+    },
+    { "id": "start-mitid", "do": "click", "role": "link", "name": "Log på med MitID", "timeoutMs": 20000 },
+    {
+      "id": "mitid-userid", "do": "type", "value": "{{mitidUserId}}", "timeoutMs": 30000, "selector": "input[id^=\"username\"]",
+      "comment": "MitID's bruger-id er ti visibility:hidden inputs. Playwright nægter fill på noget usynligt og har ret — derfor type."
+    },
+    { "id": "mitid-continue", "do": "click", "role": "button", "name": "FORTSÆT", "timeoutMs": 20000 },
+    {
+      "id": "mitid-other-device", "do": "click", "frame": "#iframeContainer", "selector": "#approve-on-another-device-button", "timeoutMs": 20000, "optional": true,
+      "comment": "MitID sender ingen push af sig selv. Uden dette klik sker der ingenting, og siden ser ud som om den venter."
+    },
+    {
+      "id": "mitid-approve", "do": "human",
+      "prompt": "Godkend login i MitID-appen.",
+      "data": ["engangskode"],
+      "until": { "url": "www.spard.dk/netbank" },
+      "timeoutMs": 600000,
+      "watch": { "as": "engangskode", "match": "([0-9](?: [0-9]){3})" },
+      "comment": "Godkendelsen bliver hos mennesket — med vilje. Koden dukker først op når appen har åbnet forespørgslen, derfor watch her og ikke et opslag før."
+    }
+  ]
+}

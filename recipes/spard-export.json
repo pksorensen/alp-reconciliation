@@ -1,0 +1,61 @@
+{
+  "name": "spard-export",
+  "comment": "Den daglige eksport. Køres efter spard-login. Henter posteringer for de konti der står i config.json — ved navn, ikke ved id, så et skiftet accountId ikke knækker linjen.",
+  "params": {
+    "agreement": {
+      "required": true,
+      "comment": "Strengen banken viser i topbaren. Den eneste spærring mod at hente en fremmed virksomheds posteringer. Gættes aldrig — den kommer fra opdagelsen."
+    },
+    "accounts": {
+      "required": true,
+      "comment": "Kontonavne som de står på oversigten. Fundet af spard-discover og skrevet i projektets config.json."
+    },
+    "period": { "default": "Seneste 12 måneder" },
+    "formats": { "default": ["CSV"] }
+  },
+  "steps": [
+    { "id": "reset", "do": "goto", "url": "https://www.spard.dk/netbank", "timeoutMs": 30000 },
+    {
+      "id": "verify-agreement", "do": "assert", "role": "button", "name": "{{agreement}}", "timeoutMs": 20000,
+      "comment": "Stopper kørslen hvis nogen har skiftet aftale i netbanken siden i går. Et kontoudtog fra det forkerte selskab er værre end intet kontoudtog."
+    },
+    {
+      "id": "per-account", "do": "forEach", "in": "accounts", "itemVar": "konto",
+      "steps": [
+        {
+          "id": "open-account", "do": "click", "role": "link", "name": "{{konto}}", "exact": true, "timeoutMs": 20000,
+          "comment": "exact, fordi getByRole matcher på delstreng og bankens kontonavne er hinandens præfikser."
+        },
+        {
+          "id": "open-period", "do": "click", "role": "button", "name": "Forudindstillet datovælger", "timeoutMs": 20000,
+          "comment": "role=menuitemcheckbox matcher intet før trækkeren er klikket. Og standarden er \"I dag\" — uden de her to trin eksporterer man én dag og tror det gik godt."
+        },
+        { "id": "set-period", "do": "click", "role": "menuitemcheckbox", "name": "{{period}}", "timeoutMs": 20000 },
+        { "id": "open-export", "do": "click", "role": "button", "name": "Eksportér", "timeoutMs": 20000 },
+        {
+          "id": "formats", "do": "forEach", "in": "formats", "itemVar": "fmt",
+          "steps": [
+            {
+              "id": "download", "do": "download", "role": "button", "name": "{{fmt}}", "exact": true, "timeoutMs": 180000, "label": "{{konto}} — {{fmt}}",
+              "comment": "Bankens eksport er et asynkront kald; knappen står i \"Loading...\" længe efter kliket. 26-68 sekunder pr. fil er normalt."
+            }
+          ]
+        },
+        { "id": "back", "do": "goto", "url": "https://www.spard.dk/netbank", "timeoutMs": 30000 }
+      ]
+    },
+    {
+      "id": "konti", "do": "collect", "selector": "a[href*='/netbank/accounts/account?accountId=']", "as": "konti", "timeoutMs": 20000,
+      "comment": "Hvad banken faktisk viser i dag. Sammenlignes med config: dukker der en ny konto op, henter linjen den ikke, og det skal kunne ses."
+    },
+    {
+      "id": "park", "do": "human", "optional": true,
+      "prompt": "Konti banken viser i dag",
+      "data": ["konti"],
+      "until": { "text": "__parkér-og-fortsæt__" },
+      "timeoutMs": 6000,
+      "comment": "Samme kanal som i opdagelsen — se noten dér. Seks sekunder om dagen for at kunne opdage en konto der er kommet til."
+    },
+    { "id": "slut", "do": "screenshot", "label": "efter eksport" }
+  ]
+}

@@ -18,6 +18,16 @@
 // ikke et objekt for sig: `start` efterlader den åben og skriver dens id i
 // tilstandsfilen, `resume` samler den op.
 //
+// `--goal` er den anden akse og siger hvad kørslen skal, ikke hvornår vi står af:
+//
+//   --goal export     (standard) henter posteringerne for kontiene i config.json
+//   --goal discover   kigger: hvilke aftaler kan brugeren se, og hvilke konti står
+//                     der under den aftale der er valgt nu. Henter og ændrer intet.
+//
+// Opskriften sættes sammen af to filer — `<bank>-login.json` og `<bank>-<goal>.json`
+// — fordi login er den halvdel begge mål deler, og fordi motoren ingen betingelser
+// har: der findes ikke én opskrift der både kan logge på og lade være.
+//
 //   BROWSER_URL     fx https://browser.agentics.dk   (påkrævet)
 //   BROWSER_TOKEN   statisk API-token — reserven, når vi ikke kører som et job
 //                   (BROWSER_API_TOKEN accepteres også)
@@ -53,7 +63,21 @@ const env = (name) => {
 };
 
 const PHASE = arg('phase', 'run');
-if (!['start', 'resume', 'run'].includes(PHASE)) die(`--phase skal være start, resume eller run — ikke "${PHASE}".`);
+if (!['start', 'resume', 'run', 'again'].includes(PHASE)) {
+    die(`--phase skal være start, resume, run eller again — ikke "${PHASE}".`);
+}
+
+// Sessionen bliver stående efter `resume`. Bruges når den samme pålogning skal bære
+// mere end én kørsel — opdagelse først, eksport bagefter — så et menneske kun skal
+// godkende MitID én gang. Den låser den huskede profil imens; går noget galt, rydder
+// `openSession` op i morgen tidlig via 409-grenen.
+const KEEP = flag('keep');
+
+// `--phase` siger *hvornår vi står af*, `--goal` siger *hvad kørslen skal*. De to er
+// uafhængige, fordi begge mål logger på først og parkerer det samme sted: ved MitID.
+// En opdagelse er altså ikke en anden slags kørsel, kun en anden anden halvdel.
+const GOAL = arg('goal', 'export');
+if (!['export', 'discover'].includes(GOAL)) die(`--goal skal være export eller discover — ikke "${GOAL}".`);
 
 const BASE = (arg('server', env('BROWSER_URL'))).replace(/\/+$/, '');
 if (!BASE) die('BROWSER_URL er ikke sat, og --server blev ikke givet.');
@@ -71,7 +95,10 @@ const config = CONFIG && existsSync(resolve(CONFIG))
     : {};
 if (CONFIG && !existsSync(resolve(CONFIG))) console.log(`ingen ${CONFIG} endnu — kører på --param alene.`);
 
-const RECIPE = resolve(arg('recipe', join(ROOT, 'recipes', `${config.bank ?? 'spard'}.json`)));
+const BANK = config.bank ?? 'spard';
+// Uden `--recipe` sættes opskriften sammen af to filer: login + målet. Med den køres
+// præcis den ene fil, hvilket er det man vil have når man fejlsøger et enkelt trin.
+const RECIPE = arg('recipe', '') ? resolve(arg('recipe', '')) : null;
 const OUT = resolve(arg('out', 'downloads'));
 const STATE = resolve(arg('state', join(process.env.TMPDIR || '/tmp', 'alp-reconciliation-run.json')));
 const PROFILE = arg('persist-profile', config.persistProfile ?? 'bank');
@@ -217,7 +244,9 @@ function printProgress(run) {
         const prompt = run.waiting.prompt ?? 'Kræver en handling';
         if (prompt !== lastPrompt) { lastPrompt = prompt; console.log(`VENTER  ${prompt}`); }
         for (const [k, v] of Object.entries(run.waiting.data ?? {})) {
-            const text = v == null ? '' : String(v);
+            // `collect` giver lister af `{text, href}`. Uden det her står der
+            // "[object Object]" dér hvor kontonavnene skulle have stået.
+            const text = v == null ? '' : Array.isArray(v) ? v.map((x) => x?.text ?? x).join(' · ') : String(v);
             if (!text.trim() || shownData.get(k) === text) continue;
             shownData.set(k, text);
             console.log(`        ${k}: ${text}`);
@@ -241,6 +270,7 @@ async function follow(sessionId, until, { heartbeat = true } = {}) {
     for (;;) {
         const run = await api('GET', `/v1/sessions/${sessionId}/run`);
         printProgress(run);
+        captureDiscovery(run);
         if (until(run)) return run;
         if (heartbeat && Date.now() - last > 30_000) {
             last = Date.now();
@@ -252,6 +282,38 @@ async function follow(sessionId, until, { heartbeat = true } = {}) {
 }
 
 const terminal = (run) => run?.state === 'done' || run?.state === 'failed';
+
+// ---------------------------------------------------------------- opdagelse
+
+const discovered = {};
+
+/**
+ * `waiting.data` er den eneste vej ud af en kørsel, og motoren sletter feltet igen i
+ * sit `finally`. Listerne kan altså kun læses mens trinnet står parkeret — derfor
+ * opsamles de her, i pollingen, og ikke bagefter.
+ *
+ * Skelnen mellem hvad der er værd at gemme, er formen: `collect` giver lister,
+ * `watch` giver strenge. Så MitID-engangskoden — en streng, død efter et halvt minut
+ * og ikke vores at gemme — havner aldrig i en fil, mens aftale- og kontolisterne gør.
+ */
+function captureDiscovery(run) {
+    for (const [key, value] of Object.entries(run?.waiting?.data ?? {})) {
+        if (Array.isArray(value) && value.length) discovered[key] = value;
+    }
+}
+
+async function saveDiscovery() {
+    if (!Object.keys(discovered).length) return null;
+    await mkdir(OUT, { recursive: true });
+    const path = join(OUT, 'discovery.json');
+    await writeFile(path, JSON.stringify(discovered, null, 2));
+    console.log(`ned  ${path}`);
+    // Maskinlæselig sidste udvej, så stationen kan bygge sit spørgsmål af den uden
+    // at skulle læse en fil den ikke ved hvor ligger.
+    console.log(`DISCOVERED ${JSON.stringify(discovered)}`);
+
+    return path;
+}
 
 // ---------------------------------------------------------------- artefakter
 
@@ -289,16 +351,47 @@ async function readState() {
     return JSON.parse(await readFile(STATE, 'utf8'));
 }
 
-async function phaseStart() {
-    const raw = JSON.parse(await readFile(RECIPE, 'utf8').catch((e) => die(`Kan ikke læse ${RECIPE}: ${e.message}`)));
+async function readRecipe(path) {
+    const raw = JSON.parse(await readFile(path, 'utf8').catch((e) => die(`Kan ikke læse ${path}: ${e.message}`)));
+
     // Filen må gerne være enten `{recipe, params}` eller bare opskriften selv.
-    const payload = raw.recipe ? raw : { recipe: raw };
+    return raw.recipe ? raw : { recipe: raw };
+}
+
+/**
+ * Login står i sin egen fil, fordi det er den halvdel begge mål deler — og fordi en
+ * opskrift, der både kan logge på og lade være, ikke findes: motoren har ingen
+ * betingelser. To filer lagt i forlængelse af hinanden er hele mekanikken.
+ */
+async function loadRecipe() {
+    if (RECIPE) return readRecipe(RECIPE);
+    // `again` kører på en session der allerede er logget ind, så login-halvdelen skal
+    // ikke med — og dermed skal kørslen heller ikke bede om et MitID-bruger-id den
+    // ingen brug har for.
+    const names = PHASE === 'again' ? [`${BANK}-${GOAL}`] : [`${BANK}-login`, `${BANK}-${GOAL}`];
+    const parts = [];
+    for (const name of names) {
+        parts.push(await readRecipe(join(ROOT, 'recipes', `${name}.json`)));
+    }
+
+    return {
+        recipe: {
+            name: `${BANK}-${GOAL}`,
+            params: Object.assign({}, ...parts.map((p) => p.recipe?.params ?? {})),
+            steps: parts.flatMap((p) => p.recipe?.steps ?? []),
+        },
+        params: Object.assign({}, ...parts.map((p) => p.params ?? {})),
+    };
+}
+
+async function buildPayload() {
+    const payload = await loadRecipe();
     payload.params = { ...(payload.params ?? {}) };
 
     // Bruger-id'et er en KØRSELSPARAMETER, ikke en del af opskriften. Derfor står
     // det i miljøet (vault agent run sætter det) og aldrig i filen — en opskrift
     // med et bruger-id i er en opskrift man ikke kan lægge i et offentligt repo.
-    for (const key of ['agreement', 'period', 'formats']) {
+    for (const key of ['agreement', 'accounts', 'period', 'formats']) {
         if (config[key] !== undefined && key in (payload.recipe?.params ?? {})) payload.params[key] = config[key];
     }
     // Kun de parametre opskriften faktisk erklærer. Motoren afviser en ukendt
@@ -325,12 +418,21 @@ async function phaseStart() {
         .filter((k) => k !== 'mitidUserId');
     if (missing.length) {
         die(`Opskriften kræver ${missing.join(', ')}, og hverken config.json eller --param gav noget. `
-            + `Skriv aftalenavnet — den streng banken viser i topbaren — i config.json eller som --param agreement="…".`);
+            + `Værdierne findes ikke ved at gætte: kør \`--goal discover\` én gang, så skriver banken selv `
+            + `aftalenavnet og kontonavnene i discovery.json, og derfra hører de hjemme i config.json.`);
     }
+
+    return payload;
+}
+
+async function phaseStart() {
+    const payload = await buildPayload();
 
     const session = await openSession();
     console.log(`session ${session.id} (${federated ? 'fødereret' : 'BROWSER_TOKEN'}, profil "${PROFILE}")`);
-    await writeFile(STATE, JSON.stringify({ sessionId: session.id, base: BASE, startedAt: new Date().toISOString() }, null, 2));
+    await writeFile(STATE, JSON.stringify({
+        sessionId: session.id, base: BASE, goal: GOAL, startedAt: new Date().toISOString(),
+    }, null, 2));
 
     // Kan kørslen ikke startes, skal sessionen ikke blive stående: den holder den
     // huskede profil låst, og i morgen tidlig ville 409 være det første der skete.
@@ -382,26 +484,57 @@ async function phaseStart() {
 async function phaseResume() {
     const state = await readState();
     const sessionId = state.sessionId;
-    console.log(`samler session ${sessionId} op`);
+    // Målet står i tilstandsfilen, ikke på kommandolinjen igen: en `resume` der skulle
+    // gentage `--goal` er en `resume` der en dag gentager det forkerte.
+    const goal = state.goal ?? 'export';
+    console.log(`samler session ${sessionId} op (${goal})`);
     let code = 0;
     try {
         const run = await follow(sessionId, terminal);
         if (run?.state !== 'done') {
             console.log(`FEJL: ${run?.error ?? 'ukendt'}`);
             code = 2;
+        } else if (goal === 'discover') {
+            // En opdagelse henter ingenting. Dens resultat er listerne, og findes de
+            // ikke, er kørslen mislykkedes uanset at hvert trin sagde ok.
+            if (!(await saveDiscovery())) { console.log('FEJL: opdagelsen fandt ingen lister.'); code = 2; }
         } else {
             const saved = await saveArtifacts(run);
             console.log(`${saved.length} fil(er) i ${OUT}`);
             if (!saved.length) { console.log('FEJL: kørslen blev færdig uden at hente noget.'); code = 2; }
+            // Hvad banken viste i dag — så en konto der er kommet til, kan opdages.
+            await saveDiscovery();
         }
     } finally {
-        // Luk altid. En efterladt session holder den huskede profil låst, og den
-        // næste morgen ville så fejle på 409 i stedet for at køre. Skal en knækket
-        // kørsel inspiceres i browseren, gøres det med `pks browser recipe --keep`
-        // i hånden — ikke ved at lade den daglige linje efterlade sessioner.
-        await closeSession(sessionId);
+        // Luk altid — med mindre kaldet selv har sagt `--keep`, fordi den samme
+        // pålogning skal bære endnu en kørsel. En efterladt session holder den huskede
+        // profil låst, og den næste morgen ville ellers fejle på 409 i stedet for at
+        // køre. Skal en knækket kørsel inspiceres i browseren, gøres det med
+        // `pks browser recipe --keep` i hånden — ikke ved at lade linjen efterlade sessioner.
+        if (KEEP) console.log(`session ${sessionId} står åben (--keep)`);
+        else await closeSession(sessionId);
     }
     process.exit(code);
+}
+
+/**
+ * Endnu en kørsel på den session `start`/`resume --keep` efterlod. Det er ikke et
+ * kneb: en kørsel *er* et verbum på sessionen hos tjenesten, og pålogningen hører til
+ * sessionen. Uden det her ville en førstegangsopsætning koste to MitID-tryk — ét til
+ * at finde ud af hvad der skal hentes, og ét til at hente det.
+ */
+async function phaseAgain() {
+    const state = await readState();
+    const payload = await buildPayload();
+    console.log(`ny kørsel på session ${state.sessionId} (${GOAL})`);
+    await writeFile(STATE, JSON.stringify({ ...state, goal: GOAL }, null, 2));
+    try {
+        await api('POST', `/v1/sessions/${state.sessionId}/run`, payload);
+    } catch (e) {
+        await closeSession(state.sessionId);
+        die(`Kørslen kunne ikke startes: ${e.message}`);
+    }
+    await phaseResume();
 }
 
 if (PHASE === 'start') {
@@ -409,6 +542,8 @@ if (PHASE === 'start') {
     process.exit(outcome === 'failed' ? 2 : 0);
 } else if (PHASE === 'resume') {
     await phaseResume();
+} else if (PHASE === 'again') {
+    await phaseAgain();
 } else {
     const { outcome } = await phaseStart();
     // `run` er hånd-tilstanden: der er ingen der sender en notifikation imellem,
