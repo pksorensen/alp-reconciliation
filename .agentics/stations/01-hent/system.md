@@ -53,10 +53,38 @@ der begynder med `Aftale:`. Står den der, så opret `<ledger>/config.json` og k
 Filen bliver committet til sidst sammen med posteringerne, så det er en engangsting: fra
 i morgen findes den.
 
-Står aftalenavnet hverken i en `config.json` eller i opgaven: **stop og meld fejl** — og
-skriv præcis at det er `agreement` der mangler, og at det hører hjemme i `config.json` i
-projektets eget repo eller i opgavebeskrivelsen som `Aftale: <navn>`. Hent ingenting og
-opfind ingen aftale.
+Står aftalenavnet hverken i en `config.json` eller i opgaven, så **spørg** — men spørg
+rigtigt, for de to kanaler til et menneske kan ikke det samme.
+
+`AskUserQuestion` er et **valg**, ikke et tekstfelt. Svaret bliver ført ind i ruden ved at
+navigere i en radioliste, så tekst der ikke matcher en af mulighederne, vælger tavst den
+første. Og ser ingen med på sessionen, afgøres spørgsmålet af sig selv i løbet af få
+sekunder — også dér på den første mulighed. **Den første mulighed skal derfor være den
+sikre.** Aftalenavnet kan aldrig komme ind ad den vej.
+
+Terminalen er derimod fri tekst: et menneske der ser med, skriver direkte i ruden. Det er
+dér navnet kan komme fra.
+
+Gør sådan:
+
+1. Kald `send_notification` **først**. `AskUserQuestion` blokerer, så en besked sendt
+   bagefter bliver aldrig sendt. Er der ingen kanal sat op på stationen, fejler kaldet —
+   fortsæt alligevel.
+2. Kald `AskUserQuestion` med præcis disse to muligheder, i denne rækkefølge:
+   - `Stop — jeg lægger aftalenavnet i repoet selv`
+   - `Jeg skriver aftalenavnet i terminalen nu`
+3. Kommer svaret `Stop` — eller kommer det af sig selv, fordi ingen så med — så meld fejl
+   som beskrevet nedenfor. Det er det rigtige udfald for en uovervåget kørsel kl. 08:00.
+4. Kommer det andet svar, så skriv én linje i ruden — `Skriv aftalenavnet præcis som banken
+   viser det i topbaren:` — og **afslut din tur uden at kalde `stop_broadcast`**. Sessionen
+   bliver stående, og den næste besked du får, er navnet. Opret `config.json` med det og
+   kør videre.
+
+Kan du slet ikke kalde `AskUserQuestion`, så spring spørgsmålet over og meld fejl.
+
+Når du melder fejl, så skriv præcis at det er `agreement` der mangler, og at det hører
+hjemme i `config.json` i projektets eget repo eller i opgavebeskrivelsen som
+`Aftale: <navn>`. Hent ingenting og opfind ingen aftale.
 
 ## Det ene sted et menneske skal ind
 

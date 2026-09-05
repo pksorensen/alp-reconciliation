@@ -46,9 +46,18 @@ ikke vente på, at nogen har lagt en mappestruktur.
 Én værdi kan kørslen ikke skaffe selv: **aftalenavnet**. Enten står det i en
 `config.json` i repoet fra start, eller også står det i opgavebeskrivelsen som en linje
 `Aftale: <navn>`, og så opretter stationen filen på første kørsel og committer den.
-Uden den ene streng stopper kørslen med at sige præcis det — den gætter aldrig, fordi
-`agreement` er assertionen der forhindrer, at en fremmed virksomheds posteringer
-havner i regnskabet.
+Mangler den begge steder, **spørger** stationen: den sender en notifikation og stiller et
+valg på opgavekortet — stop, eller "jeg skriver navnet i terminalen nu". Ser nogen med,
+kan navnet skrives direkte i ruden, og kørslen fortsætter. Ser ingen med, afgøres valget
+af sig selv på den sikre mulighed, og kørslen stopper med at sige præcis hvad der manglede.
+
+Bemærk formen: spørgsmålet er et **valg**, ikke et tekstfelt. Svaret på et
+`AskUserQuestion` føres ind ved at navigere i en radioliste, så fri tekst der ikke matcher
+en mulighed, vælger tavst den første — derfor kan aftalenavnet kun komme ind gennem
+terminalen eller en fil, aldrig gennem selve spørgsmålet.
+
+Den gætter aldrig, fordi `agreement` er assertionen der forhindrer, at en fremmed
+virksomheds posteringer havner i regnskabet.
 
 En regnskabsmappe — navnet er lige meget, stationen finder den — med en `config.json`:
 
