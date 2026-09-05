@@ -149,6 +149,40 @@ noget at godkende, før nøglen findes.
 Uden vault-opsætning skal `MITID_USER_ID` bare stå i miljøet. Det er den rigtige form til
 en hånd-kørsel og den forkerte til en daglig, uovervåget station.
 
+### Hvad importen gør, og hvad den ikke kan
+
+Stationen erklærer sit behov i `station.json` — `operatorConfig.vaultRequest` — med
+*navnet* på det den skal bruge, aldrig hvilken vault det ligger i. Repoet her er
+offentligt og kan forkes; en konkret vault-id i det ville pege enhver forks station på en
+fremmed vault. Importen på platformen slår navnet op i projektets egen vault, opretter en
+vault hvis projektet ingen har, og skriver den konkrete peger på stationen.
+
+To ting kan importen **ikke** gøre, og det er ikke en mangel der kan bygges væk:
+
+- **Oprette selve emnet.** Et vault-emne bliver forseglet med en nøgle, som en webserver
+  ikke har. En POST uden ceremonien ville give et emne, ingen nogensinde kan åbne. Så
+  importen advarer i stedet med kommandoen — nøgleholderen kører den selv:
+
+  ```
+  vault item create <vaultId> 'mitid' --field userId --owner <navnerum>
+  vault invite create <vaultId> 'mitid' --field userId="MitID bruger-id" \
+    --owner <navnerum> --link-base https://agentics.dk
+  ```
+
+  Den anden udskriver et link, bruger-id'et kan tastes ind i fra en telefon. Værdien
+  krypteres i browseren; den del af linket der står efter `#` når aldrig serveren.
+  `--link-base` er ikke pynt: uden den peger linket på vault-serveren, som med vilje
+  ikke serverer andet end JSON.
+
+- **Give stationen adgang.** `vault agent approve` kræver et fingeraftryk, der først
+  findes efter stationen har indrulleret sig. Rækkefølgen er tvunget af kryptografien,
+  ikke af en UX-beslutning, og der findes derfor ingen forhåndsgodkendelse.
+
+Og én ting mere, som kun viser sig i produktion: vault-serveren kører med OIDC, så
+stationen skal ud over sin identitet også have en **service-konto**
+(`vault agent credentials --client-id … --client-secret …`). Uden den indrullerer den
+pænt, `vault agent whoami` ser rask ud, og hver eneste læsning svarer 401.
+
 ## Kør den i hånden
 
 Værktøjet er afhængighedsfrit og kræver kun Node 20+.

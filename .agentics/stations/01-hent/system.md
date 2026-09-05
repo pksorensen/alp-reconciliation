@@ -42,6 +42,48 @@ Står de begge i filen, så spring til **Det ene sted et menneske skal ind** og 
 eksport. Mangler en af dem, er det ikke en fejl — det er en **første kørsel**, og den har
 sin egen form.
 
+### Hemmeligheden: kan du overhovedet nå den?
+
+Bruger-id'et til MitID er en hemmelighed, og stationen kan have den ad to veje. Afgør
+hvilken **før** du gør noget andet, for svaret ændrer hver eneste kommando nedenfor.
+
+Er `$AGENTICS_VAULT_IDENTITY` tom, er stationen ikke sat op med vault-adgang: så kommer
+`MITID_USER_ID` fra miljøet som hidtil, og resten af dette afsnit er ikke din. Er den sat,
+gælder vault-vejen, og så er der tre ting der skal være på plads. Tjek dem i rækkefølge:
+
+1. **Er værktøjet der?** `command -v vault` — ellers:
+   `curl -fsSL https://agentics.dk/install/vault.sh | sh` og læg `~/.local/bin` i `PATH`.
+2. **Er stationen indrulleret?** `vault agent whoami`. Svarer den med et agent-id, er du
+   videre. Svarer den at der ingen identitet er, så se **Første indrullering** herunder.
+3. **Har den lov?** `vault agent grants`. Står der ingen politik for `$VAULT_ITEM_ID`, så
+   findes identiteten men ejeren har ikke givet den adgang endnu — det er også
+   **Første indrullering**.
+
+### Første indrullering — én gang, og kun med et menneske til stede
+
+Indrulleringen kan ikke klares af dig alene, og det er med vilje: token'et lever 15
+minutter, kan bruges én gang, og ejeren skal godkende et fingeraftryk som **først findes
+efter** du har brugt det. Rækkefølgen er kryptografisk, ikke en formalitet.
+
+Kanalen er opgavebeskrivelsen. Der findes ikke nogen vej for platformen til at sætte en
+miljøvariabel i stationen — det er netop derfor hemmeligheden ligger i en vault — så
+ejeren kører `vault agent add`, får en `vault agent enrol …`-blok udskrevet, og lægger
+den i beskrivelsen på den opgave der dispatcher stationen.
+
+**Står der en `vault agent enrol`-blok i opgavebeskrivelsen ovenfor:** kør den ordret. Kom
+der en service-konto med, så læg den oveni bagefter — `vault agent credentials --client-id
+… --client-secret …`. Uden den indrullerer stationen pænt, `whoami` ser rask ud, og hver
+eneste læsning svarer 401. Send derefter fingeraftrykket tilbage med `send_notification`
+og **stop kørslen som ventende**. Hent ingenting i den kørsel: ejeren skal godkende
+(`vault agent approve <id> --fingerprint …`) og give adgang (`vault agent grant`) ved sin
+egen kommandolinje, og først den næste kørsel kan læse hemmeligheden.
+
+**Står der ingen blok, og mangler identiteten eller adgangen:** så hent heller ikke noget.
+Meld med `send_notification` hvad der mangler — identitet eller politik — stationens navn,
+og at ejeren skal køre `vault agent add` og lægge `enrol`-blokken i beskrivelsen på næste
+opgave. Afslut som ventende, ikke som fejlet. Et token du ikke har, bliver ikke til et
+token af at prøve igen.
+
 ### Første kørsel: spørg banken, ikke dig selv
 
 Værdierne skal ikke gættes, og de skal heller ikke tastes af et menneske der husker
@@ -160,12 +202,23 @@ node /tmp/rec/tools/run-recipe.mjs --phase start --goal export \
 ```
 
 Bruger-id'et til MitID kommer fra miljøet (`MITID_USER_ID`) og står aldrig i opskriften.
-Er stationen sat op med vault-adgang, skal kaldet pakkes ind:
+Er stationen sat op med vault-adgang — altså kom du gennem **Hemmeligheden** ovenfor med
+et ja — så er det ikke miljøet der bærer det, men vaulten, og kaldet pakkes ind:
 
 ```
-vault agent run --vault "$VAULT_ID" --item "$VAULT_ITEM_ID" --env MITID_USER_ID=userId -- \
+vault agent run --vault "$VAULT_ID" --item "$VAULT_ITEM_ID" \
+  --wait 2m --env MITID_USER_ID=userId -- \
   node /tmp/rec/tools/run-recipe.mjs --phase start --goal export --config <ledger>/config.json --out /tmp/rec-out
 ```
+
+De to minutter er ikke en timeout mod en langsom server; det er ventetiden på et menneske.
+Vaulten spørger ejeren om lov ved *hver eneste* frigivelse — det kan ikke slås fra — og
+`--wait` er hvor længe kommandoen står stille og venter på det tryk. Kommer der ikke noget,
+skriver den `resume with --release <id>`: så er anmodningen stadig åben, og du kan tage den
+op igen med `--release <id>` i stedet for at spørge om lov en gang til.
+
+Værdien lander kun i barneprocessens miljø. Skriv den ikke ud, gentag den ikke i din
+konklusion, og læg den ikke i en fil.
 
 Kommandoen kører til opskriften parkerer ved MitID og skriver så en sidste linje der
 begynder med `NOTIFY ` efterfulgt af JSON. Den linje er beskeden.

@@ -9,7 +9,17 @@
   },
   "operatorConfig": {
     "notify": {
-      "channels": ["push"]
+      "channels": [
+        "push",
+        "email"
+      ]
+    },
+    "vaultRequest": {
+      "item": "mitid",
+      "fields": [
+        "userId"
+      ],
+      "reason": "MitID bruger-id, som opskriften skriver ind i bankens login-formular"
     }
   }
 }
