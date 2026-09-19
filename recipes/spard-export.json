@@ -32,8 +32,8 @@
       "comment": "Modalen har ingen lukkeknap, og ReactModal__Overlay opsnapper klik hvis den bliver stående. En navigation er den eneste rene vej ud."
     },
     {
-      "id": "verify-agreement", "do": "assert", "selector": ".ebank-nav-company-selector__button[aria-label*='{{agreement}}']", "timeoutMs": 15000,
-      "comment": "SPÆRRING mod den tavse fejl. Uden den ville en kørsel, der blev stående på privat eller på en anden aftale, eksportere de forkerte konti ned i ledgeren UDEN at fejle. Delstreng, ikke hele navnet, fordi aria-label er '<aftale>, undefined'."
+      "id": "verify-agreement", "do": "assert", "selector": ".ebank-nav-company-selector__button[aria-label*='{{agreement}}' i]", "timeoutMs": 15000,
+      "comment": "SPÆRRING mod den tavse fejl. Uden den ville en kørsel, der blev stående på privat eller på en anden aftale, eksportere de forkerte konti ned i ledgeren UDEN at fejle. Delstreng, ikke hele navnet, fordi aria-label er '<aftale>, undefined'. Flaget `i` gør matchet ufølsomt for store og små bogstaver, ligesom :has-text i rækkeklikket allerede er — banken skriver selskabsnavne med sin egen kasse, og det skal ikke koste en morgen."
     },
     {
       "id": "sikr-listevisning", "do": "click", "selector": "[aria-label*='iste']", "timeoutMs": 8000, "optional": true,
