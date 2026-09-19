@@ -40,15 +40,17 @@ skriver kontoudtog ind i det.
 
 Et tomt repo er nok til at komme i gang. Regnskabet er kørslens *resultat* —
 `parse-exports.mjs` opretter `postings/`, `accounts.json`, `counterparties.json`,
-`index.json` og `raw/` fra ingenting — så den første afstemning i et nyt projekt skal
+`index.json`, `summaries/` og `raw/` fra ingenting — så den første afstemning i et nyt projekt skal
 ikke vente på, at nogen har lagt en mappestruktur.
 
-To værdier kan kørslen ikke skaffe ved at gætte: **aftalenavnet** og **kontonavnene**.
-Aftalenavnet er assertionen, der forhindrer, at en fremmed virksomheds posteringer havner
-i regnskabet, og kontonavnene er det, kørslen åbner. De står ikke i denne opskrift, for
-den ligger i et offentligt repo, og de er kundens.
+Én værdi kan kørslen ikke skaffe ved at gætte: **aftalenavnet**. Eksporten skifter selv
+til den aftale i netbanken og asserter bagefter på, at den står der — det er assertionen,
+der forhindrer, at en fremmed virksomheds posteringer havner i regnskabet. Kontiene står
+derimod ingen steder: eksporten læser selv kontolisten under aftalen og henter dem alle,
+så en ny konto er med fra dag ét. Aftalenavnet står ikke i denne opskrift, for den ligger
+i et offentligt repo, og det er kundens.
 
-De skal heller ikke tastes af et menneske, der husker forkert. **De står i banken.** Så
+Det skal heller ikke tastes af et menneske, der husker forkert. **Det står i banken.** Så
 den allerførste kørsel i et nyt projekt logger på én gang og *spørger banken*:
 
 ```
@@ -86,7 +88,6 @@ En regnskabsmappe — navnet er lige meget, stationen finder den — med en `con
 {
   "bank": "spard",
   "agreement": "Firmanavn ApS",
-  "accounts": ["Erhvervskonto", "MasterCard Business"],
   "period": "Seneste 12 måneder",
   "formats": ["CSV"],
   "persistProfile": "spard-firmanavn",
@@ -97,8 +98,7 @@ En regnskabsmappe — navnet er lige meget, stationen finder den — med en `con
 | Felt | Hvad det gør |
 | --- | --- |
 | `bank` | Hvilken opskrift der køres (`recipes/<bank>.json`). Feltet stationen genkender mappen på. |
-| `agreement` | Aftalen i netbanken. Kørslen **stopper**, hvis den er logget ind på en anden — et kontoudtog fra det forkerte selskab er værre end intet kontoudtog. |
-| `accounts` | Kontonavnene som banken skriver dem på oversigten. Navne, ikke `accountId` — et id, der skifter, ville knække linjen tavst, og navnet er alligevel det, mennesket kan genkende. |
+| `agreement` | Aftalen i netbanken, som banken skriver navnet i «Vælg aftaler». Kørslen skifter selv til den og **stopper**, hvis den ikke står i topbaren bagefter — et kontoudtog fra det forkerte selskab er værre end intet kontoudtog. Alle konti under aftalen hentes; der er ingen kontoliste at vedligeholde. |
 | `period` | Bankens egen forudindstilling. Standarden i netbanken er "I dag", og uden det her eksporterer man én dag og tror det gik godt. |
 | `formats` | `["CSV"]` er nok til posteringerne. `"PDF"` koster 25-46 sekunder pr. konto og er kun et bilag. |
 | `persistProfile` | Navnet på den huskede browserprofil. Uden den møder banken en ny enhed hver morgen — og en ny enhed betyder ekstra verifikation, hver morgen. |
@@ -111,6 +111,7 @@ Resten af mappen laver kørslen selv:
 <ledger>/counterparties.json                 modparter og hvad de fylder
 <ledger>/index.json                          hvad hver kørsel hentede
 <ledger>/raw/<ÅÅÅÅ-MM-DD>/…                  eksporten som den blev hentet
+<ledger>/summaries/<ÅÅÅÅ-MM-DD>.md            dagens nye linjer pr. konto — det, morgenens besked består af
 ```
 
 ### Hvorfor filer og ikke en database
@@ -251,7 +252,7 @@ og lade være. Værktøjet lægger dem i forlængelse af hinanden.
 | --- | --- |
 | `recipes/spard-login.json` | MitID-pålogningen. Slutter, når netbanken står åben. |
 | `recipes/spard-discover.json` | Kigger: aftaler og konti. Henter og ændrer intet. |
-| `recipes/spard-export.json` | Den daglige eksport for kontiene i `config.json`. |
+| `recipes/spard-export.json` | Den daglige eksport: skifter til aftalen i `config.json`, finder kontiene under den og henter dem alle. |
 
 De er lister af trin, ikke programmer: ingen udtryk, ingen betingelser, ingen model i
 afspilningen. En håndfuld ting i dem ser ud som pynt og er det ikke — de står som
@@ -278,9 +279,17 @@ vigtigste:
   ned og er den eneste rene vej ud. Derfor `goto` og ikke `press`.
 - **De to aftaletyper er ikke faneblade.** Et klik på "Erhverv" eller "Privat" skifter
   aftale med det samme, lukker modalen og ændrer brugerens egen netbank. Opdagelsen
-  klikker dem derfor aldrig — den læser dem.
-- **Konti åbnes på navn, ikke på `accountId`.** `role=link` + `exact` rammer den rigtige
-  konto fra oversigten, og så er der ingen id'er at holde ved lige.
+  klikker dem derfor aldrig — den læser dem. Eksporten klikker først på *rækken* med
+  aftalenavnet og bruger vippen kun som faldbagud, hvis modalen stadig står åben; i den
+  omvendte rækkefølge ville vippen kunne lande på en anden erhvervsaftale, og rækkeklikket
+  ville aldrig nå at rette det.
+- **Kontooversigten har to visninger, og kun listevisningen har links.** I kortvisning
+  findes `a[href*=accountId=]` slet ikke i DOM'en, og en kørsel henter nul konti uden at
+  fejle. Derfor klikkes listevisningen til først, og derfor asserter eksporten på mindst
+  ét kontolink, før den løber listen igennem.
+- **Konti løbes igennem fra bankens egen liste**, på `href`, og filen navngives efter
+  linkets tekst. Så er der ingen kontoliste at holde ved lige, og kontonavnet er alligevel
+  det, mennesket kan genkende.
 
 ### Hvordan en liste slipper ud af en kørsel
 
@@ -294,8 +303,9 @@ Skelnen mellem hvad der gemmes, er formen: `collect` giver lister, `watch` giver
 Derfor havner MitID-engangskoden aldrig i `discovery.json`, mens aftale- og kontolisterne
 gør.
 
-Det koster også seks sekunder om dagen i eksporten, som gør det samme med kontolisten. Det
-er prisen for at kunne opdage, at banken har fået en konto mere, som linjen ikke henter.
+Det koster også seks sekunder om dagen i eksporten, som til sidst lægger aftalen og
+kontolisten ud samme vej. Det er kvitteringen på, hvilket selskab og hvilke konti dagens
+filer kom fra.
 
 Motoren er dør B i `pks-agent-browser`. Dens egne noter står i
 `projects/pks-agent-browser/docs/recipes.md`.

@@ -20,7 +20,7 @@
 //
 // `--goal` er den anden akse og siger hvad kørslen skal, ikke hvornår vi står af:
 //
-//   --goal export     (standard) henter posteringerne for kontiene i config.json
+//   --goal export     (standard) skifter til aftalen i config.json og henter alle konti under den
 //   --goal discover   kigger: hvilke aftaler kan brugeren se, og hvilke konti står
 //                     der under den aftale der er valgt nu. Henter og ændrer intet.
 //
@@ -391,7 +391,7 @@ async function buildPayload() {
     // Bruger-id'et er en KØRSELSPARAMETER, ikke en del af opskriften. Derfor står
     // det i miljøet (vault agent run sætter det) og aldrig i filen — en opskrift
     // med et bruger-id i er en opskrift man ikke kan lægge i et offentligt repo.
-    for (const key of ['agreement', 'accounts', 'period', 'formats']) {
+    for (const key of ['agreement', 'period', 'formats']) {
         if (config[key] !== undefined && key in (payload.recipe?.params ?? {})) payload.params[key] = config[key];
     }
     // Kun de parametre opskriften faktisk erklærer. Motoren afviser en ukendt

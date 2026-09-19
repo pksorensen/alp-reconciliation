@@ -1,34 +1,64 @@
 {
   "name": "spard-export",
-  "comment": "Den daglige eksport. Køres efter spard-login. Henter posteringer for de konti der står i config.json — ved navn, ikke ved id, så et skiftet accountId ikke knækker linjen.",
+  "comment": "Den daglige eksport. Køres efter spard-login. Skifter til den aftale config.json peger på, finder selv kontiene på oversigten og henter posteringer for hver af dem. Kontiene står ikke i config — banken er kilden, og en ny konto skal hentes fra dag ét, ikke fra den dag nogen husker at skrive den ind.",
   "params": {
     "agreement": {
       "required": true,
-      "comment": "Strengen banken viser i topbaren. Den eneste spærring mod at hente en fremmed virksomheds posteringer. Gættes aldrig — den kommer fra opdagelsen."
-    },
-    "accounts": {
-      "required": true,
-      "comment": "Kontonavne som de står på oversigten. Fundet af spard-discover og skrevet i projektets config.json."
+      "comment": "Aftalens navn som banken viser det i topbaren og i 'Vælg aftaler'. Den eneste spærring mod at hente en fremmed virksomheds posteringer. Gættes aldrig — den kommer fra opdagelsen (spard-discover) og står i projektets config.json, aldrig her."
     },
     "period": { "default": "Seneste 12 måneder" },
     "formats": { "default": ["CSV"] }
   },
   "steps": [
-    { "id": "reset", "do": "goto", "url": "https://www.spard.dk/netbank", "timeoutMs": 30000 },
     {
-      "id": "verify-agreement", "do": "assert", "role": "button", "name": "{{agreement}}", "timeoutMs": 20000,
-      "comment": "Stopper kørslen hvis nogen har skiftet aftale i netbanken siden i går. Et kontoudtog fra det forkerte selskab er værre end intet kontoudtog."
+      "id": "open-picker", "do": "click", "selector": ".ebank-nav-company-selector__button", "timeoutMs": 20000,
+      "comment": "Topbarens knap ER aftalenavnet, og den er samtidig vælgeren."
+    },
+    { "id": "wait-modal", "do": "waitForText", "text": "Vælg aftaler", "timeoutMs": 10000 },
+    {
+      "id": "probe-aftaler", "do": "collect", "selector": ".company-selector-row__company .highlight-in-string", "as": "aftaler", "optional": true, "timeoutMs": 8000,
+      "comment": "Selskabsnavnene i modalen. Ikke selve rækken: dens innerText har et sr-only 'Aktiveret' hængende bagpå, så .highlight-in-string er det rene navn. Står i kørslens data som kvittering på, hvad der var at vælge imellem."
+    },
+    {
+      "id": "vaelg-aftale", "do": "click", "selector": ".company-selector-row__company:has-text('{{agreement}}')", "timeoutMs": 10000, "optional": true,
+      "comment": "Første og mest sandsynlige vej. Rækkerne ER aftalerne. :has-text er en delstreng, så navnet rammer trods sr-only-halen. Optional fordi profilen kan stå på aftalen i forvejen — så er rækken markeret og et klik gør intet."
+    },
+    {
+      "id": "vaelg-erhverv", "do": "click", "selector": ".company-private-toggle__agreement-btn:has-text('Erhverv')", "timeoutMs": 10000, "optional": true,
+      "comment": "Faldbagud, og den kører kun hvis modalen stadig står åben — altså hvis rækkeklikket ikke gjorde noget. Rækkefølgen er med vilje: et klik på vippen skifter aftale MED DET SAMME og lukker modalen, så lå den først, kunne den lande på en anden erhvervsaftale, og rækkeklikket ville aldrig nå at rette det. Lander den forkert, fejler 'verify-agreement' højlydt."
+    },
+    {
+      "id": "reset", "do": "goto", "url": "https://www.spard.dk/netbank", "timeoutMs": 30000,
+      "comment": "Modalen har ingen lukkeknap, og ReactModal__Overlay opsnapper klik hvis den bliver stående. En navigation er den eneste rene vej ud."
+    },
+    {
+      "id": "verify-agreement", "do": "assert", "selector": ".ebank-nav-company-selector__button[aria-label*='{{agreement}}']", "timeoutMs": 15000,
+      "comment": "SPÆRRING mod den tavse fejl. Uden den ville en kørsel, der blev stående på privat eller på en anden aftale, eksportere de forkerte konti ned i ledgeren UDEN at fejle. Delstreng, ikke hele navnet, fordi aria-label er '<aftale>, undefined'."
+    },
+    {
+      "id": "sikr-listevisning", "do": "click", "selector": "[aria-label*='iste']", "timeoutMs": 8000, "optional": true,
+      "comment": "LOAD-BEARING. Kontooversigten har to visninger; kun listevisningen lægger hver konto ud som <a href=...accountId=>. I kortvisning findes linkene slet ikke i DOM'en, og 'accounts' ville give 0 uden at fejle. Målt 2026-09-09: selectoren matcher præcis ét element. Optional fordi listevisning allerede kan være valgt."
+    },
+    {
+      "id": "aktuel", "do": "collect", "selector": ".ebank-nav-company-selector__button", "attr": "aria-label", "as": "aktuelAftale", "timeoutMs": 20000,
+      "comment": "Kvittering i kørslens data på hvilken aftale eksporten faktisk kom fra."
+    },
+    { "id": "shot-aftale", "do": "screenshot", "label": "netbank på {{agreement}}" },
+    {
+      "id": "krav-konti", "do": "assert", "selector": "a[href*='/netbank/accounts/account?accountId=']", "timeoutMs": 20000,
+      "comment": "En tom eksport skal fejle HØJLYDT. 'collect' venter og giver op tavst ved nul træf, så uden det her ender en mislykket kørsel som en tom mappe der ligner en konto uden bevægelser."
+    },
+    {
+      "id": "accounts", "do": "collect", "selector": "a[href*='/netbank/accounts/account?accountId=']", "as": "accounts", "timeoutMs": 20000,
+      "comment": "Hvad banken faktisk viser i dag: tekst = kontonavn, href = kontosiden. Navnet bliver filnavnet i eksporten og dermed kontoens nøgle i ledgeren."
     },
     {
       "id": "per-account", "do": "forEach", "in": "accounts", "itemVar": "konto",
       "steps": [
-        {
-          "id": "open-account", "do": "click", "role": "link", "name": "{{konto}}", "exact": true, "timeoutMs": 20000,
-          "comment": "exact, fordi getByRole matcher på delstreng og bankens kontonavne er hinandens præfikser."
-        },
+        { "id": "open-account", "do": "goto", "url": "{{konto.href}}", "timeoutMs": 30000 },
         {
           "id": "open-period", "do": "click", "role": "button", "name": "Forudindstillet datovælger", "timeoutMs": 20000,
-          "comment": "role=menuitemcheckbox matcher intet før trækkeren er klikket. Og standarden er \"I dag\" — uden de her to trin eksporterer man én dag og tror det gik godt."
+          "comment": "LOAD-BEARING. Preset-listen findes ikke i DOM'en før trækkeren er åbnet — role=menuitemcheckbox matcher intet først. Knappens navn er 'Forudindstillet datovælger, <valgt> Valgt', så delstrengen er det stabile. Standarden er 'I dag': uden det her eksporterer man ÉN dag og tror det gik godt."
         },
         { "id": "set-period", "do": "click", "role": "menuitemcheckbox", "name": "{{period}}", "timeoutMs": 20000 },
         { "id": "open-export", "do": "click", "role": "button", "name": "Eksportér", "timeoutMs": 20000 },
@@ -36,25 +66,22 @@
           "id": "formats", "do": "forEach", "in": "formats", "itemVar": "fmt",
           "steps": [
             {
-              "id": "download", "do": "download", "role": "button", "name": "{{fmt}}", "exact": true, "timeoutMs": 180000, "label": "{{konto}} — {{fmt}}",
-              "comment": "Bankens eksport er et asynkront kald; knappen står i \"Loading...\" længe efter kliket. 26-68 sekunder pr. fil er normalt."
+              "id": "download", "do": "download", "role": "button", "name": "{{fmt}}", "exact": true, "timeoutMs": 180000, "label": "{{konto.text}} — {{fmt}}",
+              "comment": "MÅLT: CSV 26 s, PDF 46 s for 12 måneder. Eksporten er asynkron og skalerer med perioden — knap tid er den mest sandsynlige årsag til at et download-trin \"bare fejler\". exact, fordi getByRole matcher på delstreng og 'CSV' ellers kunne ramme mere end én knap."
             }
           ]
         },
-        { "id": "back", "do": "goto", "url": "https://www.spard.dk/netbank", "timeoutMs": 30000 }
+        { "id": "shot", "do": "screenshot", "label": "{{konto.text}} efter eksport" }
       ]
     },
-    {
-      "id": "konti", "do": "collect", "selector": "a[href*='/netbank/accounts/account?accountId=']", "as": "konti", "timeoutMs": 20000,
-      "comment": "Hvad banken faktisk viser i dag. Sammenlignes med config: dukker der en ny konto op, henter linjen den ikke, og det skal kunne ses."
-    },
+    { "id": "back", "do": "goto", "url": "https://www.spard.dk/netbank", "timeoutMs": 30000 },
     {
       "id": "park", "do": "human", "optional": true,
-      "prompt": "Konti banken viser i dag",
-      "data": ["konti"],
+      "prompt": "Konti banken viste i dag",
+      "data": ["aktuelAftale", "accounts"],
       "until": { "text": "__parkér-og-fortsæt__" },
       "timeoutMs": 6000,
-      "comment": "Samme kanal som i opdagelsen — se noten dér. Seks sekunder om dagen for at kunne opdage en konto der er kommet til."
+      "comment": "Samme kanal som i opdagelsen — se noten dér. Seks sekunder om dagen for at et menneske kan se, hvilke konti der blev hentet, og fra hvilken aftale."
     },
     { "id": "slut", "do": "screenshot", "label": "efter eksport" }
   ]

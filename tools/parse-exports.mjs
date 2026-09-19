@@ -10,6 +10,7 @@
 //   <ledger>/accounts.json                       konti, saldo og sidste postering
 //   <ledger>/counterparties.json                 modparter og hvad de fylder
 //   <ledger>/raw/<ÅÅÅÅ-MM-DD>/…                  eksporten som den blev hentet
+//   <ledger>/summaries/<ÅÅÅÅ-MM-DD>.md            dagens nye linjer, læsbart for et menneske
 //
 // Kørslen er idempotent. Hver postering får et indhold-adresseret id (sha256 over
 // konto, dato, tekst, beløb og saldo), og et id der allerede står i filen skrives
@@ -182,6 +183,9 @@ for (const f of await readdir(IN)) await copyFile(join(IN, f), join(rawDir, f));
 const accounts = await readJson(join(LEDGER, 'accounts.json'), {});
 let added = 0;
 let seen = 0;
+// Dagens nye linjer, pr. konto. Det er dét, morgenens sammendrag skal vise — ikke
+// "394 læste", som er det samme tal hver dag og siger ingenting.
+const newByAccount = new Map();
 
 for (const { account, rows } of parsed) {
     const dir = join(LEDGER, 'postings', slug(account));
@@ -202,6 +206,7 @@ for (const { account, rows } of parsed) {
         seen += incoming.length;
         added += fresh.length;
         if (!fresh.length) continue;
+        newByAccount.set(account, [...(newByAccount.get(account) ?? []), ...fresh]);
         // Sorteret på dato og derefter id, så en fil altid har den samme rækkefølge
         // uanset hvilken dag posteringen kom ind. Ellers ville `git diff` vise et
         // hav af flytninger hver morgen i stedet for de linjer der faktisk er nye.
@@ -245,5 +250,41 @@ index.accounts = Object.keys(accounts).length;
 index.counterparties = Object.keys(counterparties).length;
 await writeFile(join(LEDGER, 'index.json'), JSON.stringify(index, null, 2) + '\n');
 
+// ---------------------------------------------------------------- sammendraget
+
+// Sammendraget er svaret på det eneste spørgsmål morgenen stiller: hvad er nyt
+// siden sidst? Det skrives som fil, så det kan committes ved siden af tallene, og
+// det printes, så det kan sendes videre som besked uden at nogen skal åbne repoet.
+// Nul nye linjer skrives eksplicit — en tavs morgen skal kunne skelnes fra en
+// kørsel der aldrig nåede hertil.
+const dkk = (n) => new Intl.NumberFormat('da-DK', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+const lines = [`# Bankposteringer ${TODAY}`, ''];
+if (!added) {
+    lines.push(`Ingen nye posteringer siden sidst. ${seen} posteringer læst fra ${parsed.length} fil(er), alle kendte i forvejen.`);
+} else {
+    lines.push(`${added} nye posteringer siden sidst (${seen} læst fra ${parsed.length} fil(er)).`, '');
+    for (const [account, fresh] of newByAccount) {
+        const sorted = [...fresh].sort((a, b) => (a.date === b.date ? a.id.localeCompare(b.id) : a.date.localeCompare(b.date)));
+        const sum = sorted.reduce((t, r) => t + r.amount, 0);
+        const saldo = accounts[slug(account)];
+        lines.push(`## ${account} — ${sorted.length} ny(e), netto ${dkk(sum)} ${saldo?.currency ?? 'DKK'}${saldo ? `, saldo ${dkk(saldo.balance)}` : ''}`, '');
+        lines.push('| Dato | Tekst | Beløb | Saldo |', '|---|---|---:|---:|');
+        for (const r of sorted) {
+            const text = (r.text || '').replace(/\|/g, '\\|');
+            lines.push(`| ${r.date} | ${text} | ${dkk(r.amount)} | ${r.balance === null ? '' : dkk(r.balance)} |`);
+        }
+        lines.push('');
+    }
+}
+lines.push('', `Konti i alt: ${Object.keys(accounts).length}. Modparter: ${Object.keys(counterparties).length}.`);
+const summaryDir = join(LEDGER, 'summaries');
+await mkdir(summaryDir, { recursive: true });
+const summaryPath = join(summaryDir, `${TODAY}.md`);
+await writeFile(summaryPath, lines.join('\n') + '\n');
+
+console.log('');
+console.log(lines.join('\n'));
+console.log('');
 console.log(`${added} nye posteringer af ${seen} læste. ${Object.keys(accounts).length} konti, ${Object.keys(counterparties).length} modparter.`);
 console.log(`Regnskabet: ${LEDGER}`);
+console.log(`Sammendrag: ${summaryPath}`);

@@ -31,15 +31,18 @@ repoets rod, og du fortsætter — se næste afsnit.
 
 ### Har du det, der skal til?
 
-`config.json` bærer to ting kørslen ikke kan skaffe ved at gætte:
+`config.json` bærer én ting kørslen ikke kan skaffe ved at gætte:
 
-- **`agreement`** — strengen banken viser i topbaren. Opskriften asserter på den, og det
-  er den eneste spærring mod at hente en fremmed virksomheds posteringer.
-- **`accounts`** — kontonavnene, præcis som de står på oversigten. Uden dem ved kørslen
-  ikke hvad den skal åbne.
+- **`agreement`** — aftalens navn, som banken viser det i topbaren og i «Vælg aftaler».
+  Opskriften skifter selv til den aftale og asserter bagefter på, at den står der. Det er
+  den eneste spærring mod at hente en fremmed virksomheds posteringer.
 
-Står de begge i filen, så spring til **Det ene sted et menneske skal ind** og kør dagens
-eksport. Mangler en af dem, er det ikke en fejl — det er en **første kørsel**, og den har
+Kontiene står **ikke** i filen. Eksporten læser selv kontolisten under aftalen og henter
+dem alle — en konto der kommer til, hentes fra dag ét i stedet for fra den dag nogen
+husker at skrive den ind.
+
+Står `agreement` i filen, så spring til **Det ene sted et menneske skal ind** og kør
+dagens eksport. Mangler den, er det ikke en fejl — det er en **første kørsel**, og den har
 sin egen form.
 
 ### Hemmeligheden: kan du overhovedet nå den?
@@ -139,21 +142,18 @@ og hvilke konti står der under den aftale der er valgt lige nu. Den henter inge
    og et valg er det eneste kanalen kan bære.
 
    Kald `send_notification` **først** — `AskUserQuestion` blokerer, så en besked sendt
-   bagefter bliver aldrig sendt. Stil så to spørgsmål:
+   bagefter bliver aldrig sendt. Stil så ét spørgsmål:
 
-   - **Aftalen.** Skriv `aktuelAftale` i spørgsmålet, for det er den eneste aftale
-     eksporten kan bruge: opskriften skifter aldrig aftale i netbanken. Muligheder, i
-     denne rækkefølge:
-     1. `Stop — det er den forkerte aftale`
-     2. `Ja, hent posteringer for «<aktuelAftale>»`
+   - **Aftalen.** Muligheder, i denne rækkefølge:
+     1. `Stop — ingen af dem`
+     2. …ét punkt pr. aftale i `aftaler`, ordret som banken skriver navnet; den der er
+        `aktuelAftale` først.
 
      Vælges den første — eller afgøres den af sig selv — så meld fejl som beskrevet
      nedenfor og skriv hvilke aftaler brugeren kunne vælge imellem (`aftaler` og
-     `aftaletyper`). Aftalen skiftes i netbanken af brugeren selv, ikke af linjen.
-
-   - **Kontiene.** Muligheder, i denne rækkefølge:
-     1. `Alle konti` — den sikre, fordi den henter alt under en aftale der lige er bekræftet
-     2. …ét punkt pr. konto i `konti`, med `multiSelect`
+     `aftaletyper`). Eksporten skifter selv til den valgte aftale i netbanken, og
+     asserter på navnet bagefter, så et forkert valg ender som en højlydt fejl, ikke som
+     posteringer fra det forkerte selskab.
 
 4. **Skriv `<ledger>/config.json`** med svarene og bankens egne strenge — kopiér dem fra
    `discovery.json`, skriv dem ikke af:
@@ -161,8 +161,7 @@ og hvilke konti står der under den aftale der er valgt lige nu. Den henter inge
    ```json
    {
      "bank": "spard",
-     "agreement": "<aktuelAftale>",
-     "accounts": ["<kontonavn>", "<kontonavn>"],
+     "agreement": "<den valgte aftale>",
      "period": "Seneste 12 måneder",
      "formats": ["CSV"],
      "persistProfile": "spard-{{project.name}}",
@@ -232,6 +231,14 @@ begynder med `NOTIFY ` efterfulgt af JSON. Den linje er beskeden.
 hvilket trin der knækkede. Prøv ikke igen i samme kørsel — et login-forsøg mere er et
 MitID-tryk mere for et menneske der ikke bad om det.
 
+**Svarer browsertjenesten 403 — «runner does not own an active job» eller «audience» —**
+så er det ikke opskriften, men adgangen: stationens job-token blev ikke vekslet til en
+browsersession. Det kan du ikke reparere herfra, men du kan gøre det muligt at reparere.
+Skriv i konklusionen præcis hvad kørslen så: værdierne af `AGENTICS_JOB_ID`,
+`AGENTICS_OWNER` og `AGENTICS_PROJECT_NAME` fra miljøet (`env | grep ^AGENTICS_`, uden
+`AGENTICS_TOKEN`), det fulde svar fra tjenesten, og klokkeslættet. Det er de tre ting
+ejeren skal bruge for at finde jobbet i platformens log. Meld `failure`, ikke `waiting`.
+
 ## Trin 2 — send beskeden
 
 Kald `send_notification` med:
@@ -274,16 +281,31 @@ Værktøjet er idempotent: posteringer der allerede står i regnskabet, skrives 
 Skriver den `0 nye posteringer`, er det ikke en fejl — det er en dag uden bevægelse, eller
 en kørsel der allerede er gennemført i dag. Skriv det i konklusionen.
 
-Læs til sidst `<ledger>/accounts.json` og fortæl saldoen pr. konto. Regn ikke noget ud selv;
-tallet står i filen.
+Den skriver også **dagens sammendrag**: `<ledger>/summaries/<dato>.md`, med de nye linjer
+pr. konto (dato, tekst, beløb, saldo), netto pr. konto og saldoen. Den samme tekst står i
+kommandoens udskrift. Det er svaret på morgenens eneste spørgsmål — hvad er nyt siden
+sidst — og det er dét, mennesket skal have, ikke et tal.
 
-### Er der kommet en konto til?
+Læs saldoen pr. konto i `<ledger>/accounts.json`. Regn ikke noget ud selv; tallet står i
+filen.
 
-Eksportkørslen læser altid kontolisten fra banken igen, lige før den slutter, og lægger den
-i `/tmp/rec-out/discovery.json` under `konti`. Sammenlign `konti[].text` med `accounts` i
-`config.json`. Står der en konto i banken som ikke bliver hentet, så **nævn den ved navn i
-konklusionen** — så kan mennesket bede om at få den med. Ret ikke `config.json` selv:
-hvilke konti der hører til regnskabet, er ikke din beslutning.
+### Trin 5 — send sammendraget
+
+Kald `send_notification` med:
+
+- `title`: `Bankposteringer <dato> — <N> nye` (eller `— ingen nye`)
+- `body`: indholdet af `<ledger>/summaries/<dato>.md`. Er der flere end 40 nye linjer, så
+  send de 40 nyeste og skriv hvor mange der er i alt — resten står i filen.
+
+Fejler kaldet, så fortsæt: sammendraget står i repoet og i din konklusion alligevel.
+
+### Hvilke konti blev hentet?
+
+Eksportkørslen læser kontolisten fra banken og lægger den i `/tmp/rec-out/discovery.json`
+under `accounts`, sammen med `aktuelAftale`. Alle konti på listen bliver hentet. Nævn dem
+ved navn i konklusionen sammen med aftalen — det er kvitteringen på, at det var det rigtige
+selskab. Dukker der en konto op i listen, som ikke har fået en fil i `/tmp/rec-out`, så
+skriv dét: så knækkede eksporten for den konto, og det må ikke drukne i de andres tal.
 
 Selve udlæsningen ser ud som en fejl i loggen og er det ikke. Linjen
 
@@ -296,14 +318,15 @@ er trinnet der holder kørslen stille længe nok til at listen kan læses ud. De
 
 ## Til sidst
 
-Commit det hele: `postings/`, `accounts.json`, `counterparties.json`, `index.json` og
-`raw/` — og `config.json`, hvis det var dig der oprettede den. Råfilerne skal med: de er
+Commit det hele: `postings/`, `accounts.json`, `counterparties.json`, `index.json`,
+`summaries/` og `raw/` — og `config.json`, hvis det var dig der oprettede den. Råfilerne skal med: de er
 det eneste, der kan afgøre, om en manglende postering skyldtes banken eller vores parser.
 
 ## Afslut altid med en dom
 
 Kald `stop_broadcast` med `conclusion: "success"` og et `message` der siger hvor mange nye
-posteringer der kom ind, hvilke konti de lå på, og saldoen pr. konto. Slut med commit-sha'en.
+posteringer der kom ind, hvilken aftale og hvilke konti de lå på, saldoen pr. konto — og
+selve de nye linjer fra sammendraget, hvis der er færre end 40. Slut med commit-sha'en.
 
 `stop_broadcast` er også *deferred* — hent det med `ToolSearch` på
 `select:mcp__plugin_vibecast_vibecast__stop_broadcast` **inden** du starter kørslen, ikke
