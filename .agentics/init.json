@@ -4,9 +4,16 @@
     "description": "Hent posteringerne fra netbanken og skriv dem ind i posteringsregnskabet. Kørslen standser ved MitID og sender en notifikation — den venter på et menneske, ikke på en fejl."
   },
   "schedule": {
-    "name": "Daglig afstemning",
+    "name": "Daglig afstemning (hverdage)",
     "cadence": {
       "kind": "daily",
+      "days": [
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday"
+      ],
       "hour": 8,
       "minute": 0,
       "timeZone": "Europe/Copenhagen"
