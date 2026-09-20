@@ -265,12 +265,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * flere minutter. En linje pr. halve minut er forskellen på en kørsel der venter
  * og en der bliver slået ihjel mens den venter.
  */
-async function follow(sessionId, until, { heartbeat = true } = {}) {
+async function follow(sessionId, until, { heartbeat = true, onData = null } = {}) {
     let last = Date.now();
     for (;;) {
         const run = await api('GET', `/v1/sessions/${sessionId}/run`);
         printProgress(run);
         captureDiscovery(run);
+        if (onData) await forwardStrings(run, onData);
         if (until(run)) return run;
         if (heartbeat && Date.now() - last > 30_000) {
             last = Date.now();
@@ -282,6 +283,71 @@ async function follow(sessionId, until, { heartbeat = true } = {}) {
 }
 
 const terminal = (run) => run?.state === 'done' || run?.state === 'failed';
+
+// ---------------------------------------------------------------- koden
+
+/**
+ * Engangskoden findes først når MitID-appen har åbnet forespørgslen — altså EFTER at
+ * stationen har sendt sin notifikation og står blokeret inde i `resume`. Stationen kan
+ * ikke sende to gange, så værktøjet gør det selv: samme rute som stationens
+ * `send_notification`, samme runner-token og job-id som føderationen. Modtageren
+ * bestemmes af stationens opsætning på platformen, aldrig herfra.
+ *
+ * Nøglen er værdien, ikke feltnavnet: trykker mennesket "prøv igen" i appen, kommer
+ * der en ny kode, og det er den nye der skal frem. Værdier stationen allerede har
+ * sendt (fordi `start` nåede at se dem) står i tilstandsfilen og sendes ikke igen.
+ */
+const sentValues = new Set();
+
+async function forwardStrings(run, onData) {
+    for (const [key, value] of Object.entries(run?.waiting?.data ?? {})) {
+        if (typeof value !== 'string' || !value.trim() || sentValues.has(value)) continue;
+        sentValues.add(value);
+        await onData(run.waiting?.prompt ?? 'Godkend login', key, value.trim());
+    }
+}
+
+async function notifyCode(prompt, key, value) {
+    // Linjen står altid — også når der ikke er nogen platform at sende til — så en
+    // hånd-drevet kørsel ser koden i terminalen, og en station kan se hvad der blev sendt.
+    console.log(`NOTIFY-KODE ${JSON.stringify({ prompt, [key]: value })}`);
+
+    const agentics = env('AGENTICS_BASE_URL').replace(/\/+$/, '');
+    const runnerToken = env('AGENTICS_TOKEN');
+    const jobId = env('AGENTICS_JOB_ID');
+    const owner = env('AGENTICS_OWNER');
+    const project = env('AGENTICS_PROJECT_NAME');
+    if (!agentics || !runnerToken || !jobId || !owner || !project) {
+        console.log('        (intet AGENTICS_*-miljø — koden står kun her)');
+
+        return;
+    }
+
+    const url = `${agentics}/api/owners/${encodeURIComponent(owner)}/projects/${encodeURIComponent(project)}/notifications`;
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${runnerToken}` },
+        body: JSON.stringify({
+            jobId,
+            // Koden i titlen: det er den der står på låseskærmen og i emnefeltet.
+            title: `MitID-kode ${value}`,
+            body: `${prompt}\n\nBankens skærm viser koden ${value}. Godkend i MitID-appen, hvis appen viser den samme.`,
+            // Sin egen nøgle, så den ikke overskriver "Godkend MitID"-beskeden på telefonen.
+            tag: `job-${jobId}-kode`,
+        }),
+    }).catch((e) => { console.log(`        koden kunne ikke sendes — nåede ikke ${url}: ${e.message}`); return null; });
+    if (!res) return;
+    if (!res.ok) {
+        const detail = await res.text().catch(() => '');
+        console.log(`        koden kunne ikke sendes (${res.status}): ${detail.slice(0, 200)}`);
+
+        return;
+    }
+    const out = await res.json().catch(() => ({}));
+    const delivered = (out.delivered ?? []).join(', ') || 'ingen kanal';
+    const skipped = (out.skipped ?? []).map((x) => `${x.channel}: ${x.detail ?? ''}`.trim()).join('; ');
+    console.log(`        koden sendt — leveret: ${delivered}${skipped ? ` (sprunget over: ${skipped})` : ''}`);
+}
 
 // ---------------------------------------------------------------- opdagelse
 
@@ -477,6 +543,12 @@ async function phaseStart() {
         data: Object.fromEntries(data),
         sessionId: session.id,
     })}`);
+    // Det stationen nu sender selv, skal `resume` ikke sende én gang til.
+    const notified = Object.fromEntries(data.filter(([, v]) => typeof v === 'string'));
+    if (Object.keys(notified).length) {
+        const state = JSON.parse(await readFile(STATE, 'utf8'));
+        await writeFile(STATE, JSON.stringify({ ...state, notified }, null, 2));
+    }
 
     return { outcome: 'waiting', sessionId: session.id };
 }
@@ -488,9 +560,10 @@ async function phaseResume() {
     // gentage `--goal` er en `resume` der en dag gentager det forkerte.
     const goal = state.goal ?? 'export';
     console.log(`samler session ${sessionId} op (${goal})`);
+    for (const v of Object.values(state.notified ?? {})) if (typeof v === 'string') sentValues.add(v);
     let code = 0;
     try {
-        const run = await follow(sessionId, terminal);
+        const run = await follow(sessionId, terminal, { onData: notifyCode });
         if (run?.state !== 'done') {
             console.log(`FEJL: ${run?.error ?? 'ukendt'}`);
             code = 2;

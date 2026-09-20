@@ -268,7 +268,11 @@ vigtigste:
 - **MitID sender ingen push af sig selv.** Efter FORTSÆT viser den et *valg*. Uden klikket
   på "åbn app på anden enhed" sker der ingenting, og siden ser ud som om den venter.
 - **Engangskoden kommer først, når appen har åbnet forespørgslen** — derfor `watch` på
-  selve ventetrinnet i stedet for et opslag før.
+  selve ventetrinnet i stedet for et opslag før. Og derfor kan stationens notifikation
+  ikke bære koden: den er sendt, før koden findes. `--phase resume` sender den selv,
+  som sin egen notifikation (`MitID-kode 1 2 3 4`), i det sekund den står på skærmen —
+  mod platformens notifikationsrute, med runnerens token og job-id, ligesom
+  føderationen. Uden `AGENTICS_*` i miljøet står den kun i terminalen som `NOTIFY-KODE`.
 - **Periodevælgeren skal åbnes først.** `role=menuitemcheckbox` matcher intet, før
   trækkeren er klikket. Og standarden er "I dag": uden de to trin eksporterer man én dag
   og tror, det gik godt.

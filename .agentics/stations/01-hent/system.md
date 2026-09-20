@@ -244,10 +244,13 @@ ejeren skal bruge for at finde jobbet i platformens log. Meld `failure`, ikke `w
 Kald `send_notification` med:
 
 - `title`: `Godkend MitID — afstemning {{task.title}}`
-- `body`: prompten fra `NOTIFY`-linjen, og **engangskoden hvis den står i `data`**.
-  Koden er det, der gør beskeden brugbar: den er dét, modtageren skal sammenligne med
-  det, appen viser. Står der ingen kode, så skriv beskeden uden — MitID har sendt sin
-  egen besked, og din er en hjælp, ikke det eneste signal.
+- `body`: prompten fra `NOTIFY`-linjen, og engangskoden **hvis** den står i `data`.
+
+Står der ingen kode, så send beskeden uden — og **vent ikke på den**. Koden findes først,
+når modtageren har åbnet forespørgslen i MitID-appen, altså efter din besked. Den sendes
+af værktøjet selv i Trin 3: `--phase resume` holder øje med kørslen og sender en anden
+notifikation, `MitID-kode 1 2 3 4`, i samme sekund koden står på bankens skærm. Din
+besked er "tag telefonen frem"; værktøjets er koden. Du skal ikke sende koden selv.
 
 `send_notification` er et *deferred* værktøj: kan du ikke kalde det, så hent det først
 med `ToolSearch` på `select:mcp__plugin_vibecast_vibecast__send_notification`.
@@ -267,6 +270,13 @@ Den venter på godkendelsen, henter eksportfilerne og lukker sessionen. **Den er
 lange perioder, og det er meningen**: et menneske skal finde sin telefon frem, og bankens
 egen eksport tager 26-68 sekunder pr. fil. Den skriver en linje hvert halve minut, så der
 er bevægelse at se på. Afbryd den ikke.
+
+Når engangskoden dukker op, skriver den `NOTIFY-KODE {…}` og sender selv koden som
+notifikation til ejeren — samme rute som `send_notification`, med runnerens token. Linjen
+lige under fortæller om det lykkedes (`koden sendt — leveret: email`) eller ikke (`koden
+kunne ikke sendes (403): …`). Kunne den ikke sendes, så nævn det i konklusionen med
+statuskoden — men gør ikke noget andet: koden lever et halvt minut, og der er ikke tid
+til at sende den igen.
 
 Bliver den ved med at vente til den løber tør (10 minutter), er svaret at ingen godkendte.
 Det er en fejl, men en anden slags end en knækket opskrift — skriv det som det er.
