@@ -331,7 +331,9 @@ async function notifyCode(prompt, key, value) {
             jobId,
             // Koden i titlen: det er den der står på låseskærmen og i emnefeltet.
             title: `MitID-kode ${value}`,
-            body: `${prompt}\n\nBankens skærm viser koden ${value}. Godkend i MitID-appen, hvis appen viser den samme.`,
+            // Sidste linje er til iOS' "udfyld kode fra Mail": den leder efter et kort
+            // tal efter ordet kode, og "8 4 7 2" med mellemrum er ikke et tal for den.
+            body: `${prompt}\n\nBankens skærm viser koden ${value}. Godkend i MitID-appen, hvis appen viser den samme.\n\nKode: ${value.replace(/\s+/g, '')}`,
             // Sin egen nøgle, så den ikke overskriver "Godkend MitID"-beskeden på telefonen.
             tag: `job-${jobId}-kode`,
         }),
