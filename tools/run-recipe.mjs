@@ -335,6 +335,9 @@ async function notifyCode(prompt, key, value) {
             // Sin egen nøgle, så den ikke overskriver "Godkend MitID"-beskeden på telefonen.
             tag: `job-${jobId}-kode`,
         }),
+        // Kaldet står inde i pollingen. Hænger platformen, må det ikke være hjerteslaget
+        // der dør med den — runnerens idle timeout slår en tavs station ihjel.
+        signal: AbortSignal.timeout(20_000),
     }).catch((e) => { console.log(`        koden kunne ikke sendes — nåede ikke ${url}: ${e.message}`); return null; });
     if (!res) return;
     if (!res.ok) {
